@@ -1,0 +1,15 @@
+# Base de Dados (NÃO ENVIAR DADOS REAIS)
+*.db
+*.sqlite3
+
+# Ficheiros e Pastas Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+
+# Ficheiros do PyInstaller (Para quando criarmos o .exe)
+build/
+dist/
+*.spec
