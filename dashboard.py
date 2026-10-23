@@ -62,9 +62,11 @@ class DashboardFrame(ctk.CTkFrame):
         self.tree_repetidos.pack(fill="both", expand=True, padx=5, pady=5)
 
     def extrair_extensao(self, doc):
-        if not isinstance(doc, str) or '.' not in doc: return 'Outros'
+        # Se não tiver ponto, assumimos que é impressão direta de software ou navegador
+        if not isinstance(doc, str) or '.' not in doc: return 'Outros / Web'
         ext = doc.split('.')[-1].lower().strip()
-        if len(ext) > 4 or not ext.isalnum(): return 'Outros'
+        # Se a "extensão" tiver mais de 5 letras, não é um ficheiro real
+        if len(ext) > 5 or not ext.isalnum(): return 'Outros / Web'
         return f".{ext}"
 
     def gerar_graficos(self):
@@ -188,35 +190,55 @@ class DashboardFrame(ctk.CTkFrame):
         fig_tempo.tight_layout(); FigureCanvasTkAgg(fig_tempo, master=self.tab_tempo).draw(); FigureCanvasTkAgg(fig_tempo, master=self.tab_tempo).get_tk_widget().pack(fill="both", expand=True)
 
         # ==========================================
-        # 3. AUDITORIA & DESPERDÍCIO (AGORA COM DUPLICADOS)
+        # 3. AUDITORIA & DESPERDÍCIO (Rosca Limpa + Legenda Detalhada)
         # ==========================================
         df['extensao'] = df['documento'].apply(self.extrair_extensao)
-        df_ext = df.groupby('extensao')['paginas'].sum().sort_values(ascending=False).head(5)
+        df_ext = df.groupby('extensao')['paginas'].sum().sort_values(ascending=False).head(6)
         
-        fig_audit, ax_audit = plt.subplots(figsize=(5, 5)); fig_audit.patch.set_facecolor(bg); ax_audit.set_facecolor(bg)
+        fig_audit, ax_audit = plt.subplots(figsize=(7, 5))
+        fig_audit.patch.set_facecolor(bg)
+        ax_audit.set_facecolor(bg)
+        
         if not df_ext.empty:
-            ax_audit.pie(df_ext.values, labels=df_ext.index, autopct='%1.1f%%', startangle=90, 
-                         colors=['#E74C3C', '#8E44AD', '#3498DB', '#1ABC9C', '#F39C12'], 
-                         textprops={'color': txt, 'weight': 'bold'}, 
-                         wedgeprops={'edgecolor': bg, 'linewidth': 2, 'width': 0.4}) 
+            # 1. Prepara os textos da legenda já com a percentagem incorporada
+            total_paginas = df_ext.sum()
+            legend_labels = [f"{idx} - {val/total_paginas*100:.1f}%" for idx, val in df_ext.items()]
+
+            # 2. Desenha a rosca completamente limpa (sem autopct)
+            wedges, texts = ax_audit.pie(
+                df_ext.values, 
+                startangle=90, 
+                colors=['#E74C3C', '#8E44AD', '#3498DB', '#1ABC9C', '#F39C12', '#95A5A6'], 
+                wedgeprops={'edgecolor': bg, 'linewidth': 2, 'width': 0.4}
+            )
+            
+            # 3. Coloca a legenda formatada à direita
+            ax_audit.legend(
+                wedges, legend_labels,
+                title="Formatos & Volume",
+                loc="center left",
+                bbox_to_anchor=(0.95, 0.5),
+                frameon=False,
+                labelcolor=txt
+            )
                      
         ax_audit.set_title('Volume por Tipo de Ficheiro', color=txt, fontsize=12, pad=10, weight='bold')
-        fig_audit.tight_layout(); FigureCanvasTkAgg(fig_audit, master=self.frame_audit_esq).draw(); FigureCanvasTkAgg(fig_audit, master=self.frame_audit_esq).get_tk_widget().pack(fill="both", expand=True)
-
+        fig_audit.tight_layout()
+        FigureCanvasTkAgg(fig_audit, master=self.frame_audit_esq).draw()
+        FigureCanvasTkAgg(fig_audit, master=self.frame_audit_esq).get_tk_widget().pack(fill="both", expand=True)
+      
         # 3A. Tabela Top 10 Extensos
         top_10 = df.nlargest(10, 'paginas')
         for _, r in top_10.iterrows():
             d_str = r['data_hora'].strftime("%d/%m %H:%M")
             self.tree_top10.insert("", "end", values=(d_str, r['nome_final'], int(r['paginas']), r['documento']))
 
-        # 3B. Tabela Top 10 Duplicados (Desperdício)
-        # Agrupa pelo mesmo documento e mesmo utilizador
+        # 3B. Tabela Top 10 Duplicados
         df_duplicados = df.groupby(['documento', 'nome_final']).agg(
             vezes=('documento', 'count'),
             paginas_totais=('paginas', 'sum')
         ).reset_index()
         
-        # Filtra apenas os que foram impressos mais de 1 vez, ordenado pelos que mais se repetiram
         df_duplicados = df_duplicados[df_duplicados['vezes'] > 1].sort_values(by=['vezes', 'paginas_totais'], ascending=[False, False]).head(10)
         
         for _, r in df_duplicados.iterrows():
