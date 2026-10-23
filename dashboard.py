@@ -1,203 +1,223 @@
-# dashboard.py
 import customtkinter as ctk
-from tkinter import messagebox, filedialog
+from tkinter import ttk
 import pandas as pd
-from datetime import datetime
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
-from tkcalendar import Calendar
-
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from db import obter_sessao
 
-def f_moeda(v): return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
 class DashboardFrame(ctk.CTkFrame):
-    def __init__(self, master, **kwargs):
-        super().__init__(master, fg_color="transparent", **kwargs)
+    def __init__(self, master):
+        super().__init__(master, fg_color="transparent")
         
-        self.frame_filtros = ctk.CTkFrame(self, fg_color="transparent")
-        self.frame_filtros.pack(fill="x", pady=(0, 5))
+        self.tabview_dash = ctk.CTkTabview(self)
+        self.tabview_dash.pack(fill="both", expand=True)
+
+        self.tab_geral = self.tabview_dash.add("Visão Geral")
+        self.tab_tempo = self.tabview_dash.add("Análise Temporal")
+        self.tab_auditoria = self.tabview_dash.add("Auditoria & Desperdício")
         
-        ctk.CTkLabel(self.frame_filtros, text="Inicial:").pack(side="left", padx=(0, 5))
-        self.entrada_data_ini = ctk.CTkEntry(self.frame_filtros, width=90, placeholder_text="DD/MM/AAAA"); self.entrada_data_ini.pack(side="left", padx=(0, 2))
-        ctk.CTkButton(self.frame_filtros, text="📅", width=30, command=lambda: self.abrir_calendario(self.entrada_data_ini)).pack(side="left", padx=(0, 10))
+        # Setup da Aba de Auditoria
+        self.frame_audit_esq = ctk.CTkFrame(self.tab_auditoria, fg_color="transparent")
+        self.frame_audit_esq.pack(side="left", fill="both", expand=True)
         
-        ctk.CTkLabel(self.frame_filtros, text="Final:").pack(side="left", padx=(0, 5))
-        self.entrada_data_fim = ctk.CTkEntry(self.frame_filtros, width=90, placeholder_text="DD/MM/AAAA"); self.entrada_data_fim.pack(side="left", padx=(0, 2))
-        ctk.CTkButton(self.frame_filtros, text="📅", width=30, command=lambda: self.abrir_calendario(self.entrada_data_fim)).pack(side="left", padx=(0, 10))
+        self.frame_audit_dir = ctk.CTkFrame(self.tab_auditoria, fg_color="transparent")
+        self.frame_audit_dir.pack(side="right", fill="both", expand=True, padx=10, pady=10)
+        
+        # --- CORREÇÃO DO FUNDO BRANCO NAS TABELAS ---
+        bg = "#2b2b2b" if ctk.get_appearance_mode() == "Dark" else "#ffffff"
+        fg = "white" if bg == "#2b2b2b" else "black"
+        style = ttk.Style()
+        style.theme_use("default") 
+        style.configure("Treeview", background=bg, foreground=fg, fieldbackground=bg, borderwidth=0)
+        style.map('Treeview', background=[('selected', '#1f538d')])
+        
+        # --- TABELA 1: TOP 10 EXTENSOS ---
+        self.frame_t1 = ctk.CTkFrame(self.frame_audit_dir)
+        self.frame_t1.pack(fill="both", expand=True, pady=(0, 5))
+        ctk.CTkLabel(self.frame_t1, text="Top 10 Documentos Mais Extensos (Volume Único)", font=ctk.CTkFont(weight="bold", size=13)).pack(pady=(5, 2))
+        
+        scroll_y1 = ttk.Scrollbar(self.frame_t1)
+        scroll_y1.pack(side="right", fill="y")
+        self.tree_top10 = ttk.Treeview(self.frame_t1, columns=("Data", "Usuario", "Pags", "Doc"), show="headings", yscrollcommand=scroll_y1.set)
+        scroll_y1.config(command=self.tree_top10.yview)
+        
+        for c, w in zip(("Data", "Usuario", "Pags", "Doc"), (90, 100, 50, 200)):
+            self.tree_top10.heading(c, text=c)
+            self.tree_top10.column(c, width=w, anchor="center" if c != "Doc" else "w")
+        self.tree_top10.pack(fill="both", expand=True, padx=5, pady=5)
 
-        ctk.CTkLabel(self.frame_filtros, text="Dept:").pack(side="left", padx=(0, 5))
-        self.cb_dept = ctk.CTkComboBox(self.frame_filtros, width=120, values=["Todos"]); self.cb_dept.pack(side="left", padx=(0, 10))
+        # --- TABELA 2: TOP 10 DUPLICADOS (NOVA AUDITORIA) ---
+        self.frame_t2 = ctk.CTkFrame(self.frame_audit_dir)
+        self.frame_t2.pack(fill="both", expand=True, pady=(5, 0))
+        ctk.CTkLabel(self.frame_t2, text="Top 10 Impressões Duplicadas (Desperdício)", font=ctk.CTkFont(weight="bold", size=13)).pack(pady=(5, 2))
+        
+        scroll_y2 = ttk.Scrollbar(self.frame_t2)
+        scroll_y2.pack(side="right", fill="y")
+        self.tree_repetidos = ttk.Treeview(self.frame_t2, columns=("Qtd", "Usuario", "Total Pags", "Doc"), show="headings", yscrollcommand=scroll_y2.set)
+        scroll_y2.config(command=self.tree_repetidos.yview)
+        
+        for c, w in zip(("Qtd", "Usuario", "Total Pags", "Doc"), (45, 100, 75, 220)):
+            self.tree_repetidos.heading(c, text=c)
+            self.tree_repetidos.column(c, width=w, anchor="center" if c != "Doc" else "w")
+        self.tree_repetidos.pack(fill="both", expand=True, padx=5, pady=5)
 
-        ctk.CTkLabel(self.frame_filtros, text="Utilizador:").pack(side="left", padx=(0, 5))
-        self.cb_usuario = ctk.CTkComboBox(self.frame_filtros, width=130, values=["Todos"]); self.cb_usuario.pack(side="left", padx=(0, 15))
-
-        ctk.CTkButton(self.frame_filtros, text="Aplicar 📊", command=self.gerar_graficos, width=90, fg_color="#0052cc", hover_color="#003d99").pack(side="left")
-        ctk.CTkButton(self.frame_filtros, text="Limpar", command=self.limpar_filtros, width=70, fg_color="#555", hover_color="#333").pack(side="left", padx=10)
-
-        ctk.CTkButton(self.frame_filtros, text="Excel 📊", command=self.exportar_excel, width=80, fg_color="#1D6F42", hover_color="#144D2E").pack(side="right", padx=5)
-        self.lbl_custo = ctk.CTkLabel(self.frame_filtros, text="Custo Total: R$ 0,00", font=ctk.CTkFont(weight="bold", size=14), text_color="#2FA572")
-        self.lbl_custo.pack(side="right", padx=15)
-
-        # MÓDULO ESG (IMPACTO AMBIENTAL COM LEGENDA)
-        self.frame_esg_container = ctk.CTkFrame(self)
-        self.frame_esg_container.pack(fill="x", padx=5, pady=(0, 10))
-
-        self.frame_esg_metrics = ctk.CTkFrame(self.frame_esg_container, fg_color="transparent")
-        self.frame_esg_metrics.pack(fill="x", pady=(5, 0))
-
-        self.lbl_esg_arvores = ctk.CTkLabel(self.frame_esg_metrics, text="🌳 Árvores: 0", font=ctk.CTkFont(weight="bold", size=13), text_color="#2ECC71")
-        self.lbl_esg_arvores.pack(side="left", expand=True)
-
-        self.lbl_esg_agua = ctk.CTkLabel(self.frame_esg_metrics, text="💧 Água: 0 L", font=ctk.CTkFont(weight="bold", size=13), text_color="#3498DB")
-        self.lbl_esg_agua.pack(side="left", expand=True)
-
-        self.lbl_esg_co2 = ctk.CTkLabel(self.frame_esg_metrics, text="☁️ Pegada CO2: 0 Kg", font=ctk.CTkFont(weight="bold", size=13), text_color="#95A5A6")
-        self.lbl_esg_co2.pack(side="left", expand=True)
-
-        # LEGENDA ADICIONADA AQUI
-        self.lbl_esg_legenda = ctk.CTkLabel(self.frame_esg_container, text="*Métrica Base: 1 Árvore = 8.333 folhas | 1 Folha = 10 Litros de Água | 1 Folha = 15g de Emissão de CO2", font=ctk.CTkFont(size=11, slant="italic"), text_color="gray")
-        self.lbl_esg_legenda.pack(pady=(2, 5))
-
-        self.tabs_graficos = ctk.CTkTabview(self)
-        self.tabs_graficos.pack(fill="both", expand=True)
-        self.tab_geral = self.tabs_graficos.add("Visão Geral (Rankings)")
-        self.tab_tempo = self.tabs_graficos.add("Análise Temporal e Evolução")
-        self.df_atual = pd.DataFrame()
-        self.carregar_comboboxes()
-
-    def carregar_comboboxes(self):
-        sessao, engine = obter_sessao()
-        try:
-            df = pd.read_sql('''SELECT DISTINCT COALESCE(m.departamento, 'Sem Setor') as dept, COALESCE(m.nome_real, l.usuario) as usr FROM logs_impressao l LEFT JOIN mapeamento_terminais m ON UPPER(l.terminal) = UPPER(m.terminal)''', engine)
-            self.cb_dept.configure(values=["Todos"] + sorted([str(x) for x in df['dept'].dropna().unique() if str(x).strip()]))
-            self.cb_usuario.configure(values=["Todos"] + sorted([str(x) for x in df['usr'].dropna().unique() if str(x).strip()]))
-            self.cb_dept.set("Todos"); self.cb_usuario.set("Todos")
-        except Exception: pass
-        finally: sessao.close()
-
-    def abrir_calendario(self, entry_alvo):
-        janela_cal = ctk.CTkToplevel(self); janela_cal.title("Data"); janela_cal.geometry("300x300"); janela_cal.attributes("-topmost", True); janela_cal.grab_set()
-        bg_color, fg_color = ("#2b2b2b", "white") if ctk.get_appearance_mode() == "Dark" else ("white", "black")
-        cal = Calendar(janela_cal, selectmode='day', date_pattern='dd/mm/yyyy', background="#1f538d", headersbackground="#1f538d", normalbackground=bg_color, foreground=fg_color, normalforeground=fg_color, headersforeground="white")
-        cal.pack(pady=10, padx=10, fill="both", expand=True)
-        ctk.CTkButton(janela_cal, text="Confirmar 📅", command=lambda: [entry_alvo.delete(0, 'end'), entry_alvo.insert(0, cal.get_date()), janela_cal.destroy()]).pack(pady=10)
-
-    def limpar_filtros(self):
-        self.entrada_data_ini.delete(0, 'end'); self.entrada_data_fim.delete(0, 'end'); self.cb_dept.set("Todos"); self.cb_usuario.set("Todos")
-        self.gerar_graficos()
-
-    def exportar_excel(self):
-        if self.df_atual.empty: return messagebox.showwarning("Aviso", "Não há dados para exportar.")
-        cam = filedialog.asksaveasfilename(defaultextension=".xlsx", initialfile="Dashboard_Dados.xlsx", filetypes=[("Excel", "*.xlsx")])
-        if cam: 
-            self.df_atual.rename(columns={'data_hora': 'Data/Hora', 'usuario_final': 'Utilizador', 'departamento': 'Departamento', 'impressora': 'Impressora', 'paginas': 'Páginas', 'custo_total': 'Custo Estimado (R$)'}).to_excel(cam, index=False)
-            messagebox.showinfo("Sucesso", "Excel exportado!")
+    def extrair_extensao(self, doc):
+        if not isinstance(doc, str) or '.' not in doc: return 'Outros'
+        ext = doc.split('.')[-1].lower().strip()
+        if len(ext) > 4 or not ext.isalnum(): return 'Outros'
+        return f".{ext}"
 
     def gerar_graficos(self):
-        for w in self.tab_geral.winfo_children(): w.destroy()
-        for w in self.tab_tempo.winfo_children(): w.destroy()
-        plt.close('all') 
-
-        d_ini, d_fim, dept, usu = self.entrada_data_ini.get().strip(), self.entrada_data_fim.get().strip(), self.cb_dept.get().strip(), self.cb_usuario.get().strip()
         sessao, engine = obter_sessao()
         try:
-            query = '''
-                SELECT l.data_hora, COALESCE(m.nome_real, l.usuario) as usuario_final, COALESCE(m.departamento, 'Sem Setor') as departamento, l.impressora, l.paginas, COALESCE(i.custo_pagina, 0.0) as custo_pagina
-                FROM logs_impressao l
-                LEFT JOIN mapeamento_terminais m ON UPPER(l.terminal) = UPPER(m.terminal)
-                LEFT JOIN configuracao_impressoras i ON UPPER(l.impressora) = UPPER(i.nome_impressora) WHERE 1=1
-            '''
-            if d_ini: query += f" AND l.data_hora >= '{datetime.strptime(d_ini, '%d/%m/%Y').strftime('%Y-%m-%d 00:00:00')}'"
-            if d_fim: query += f" AND l.data_hora <= '{datetime.strptime(d_fim, '%d/%m/%Y').strftime('%Y-%m-%d 23:59:59')}'"
-            if dept and dept != "Todos": query += f" AND LOWER(COALESCE(m.departamento, 'Sem Setor')) = LOWER('{dept}')"
-            if usu and usu != "Todos": query += f" AND LOWER(COALESCE(m.nome_real, l.usuario)) = LOWER('{usu}')"
-
+            query = '''SELECT l.data_hora, l.terminal, COALESCE(m.nome_real, l.usuario) as nome_final, 
+                       COALESCE(m.departamento, 'Sem Setor') as departamento, l.impressora, l.paginas, l.documento 
+                       FROM logs_impressao l 
+                       LEFT JOIN mapeamento_terminais m ON UPPER(l.terminal) = UPPER(m.terminal)'''
             df = pd.read_sql(query, engine)
-            if df.empty: 
-                self.lbl_custo.configure(text="Custo Total: R$ 0,00"); self.df_atual = df
-                self.lbl_esg_arvores.configure(text="🌳 Árvores: 0")
-                self.lbl_esg_agua.configure(text="💧 Água: 0 L")
-                self.lbl_esg_co2.configure(text="☁️ Pegada CO2: 0 Kg")
-                ctk.CTkLabel(self.tab_geral, text="Sem dados.", text_color="gray").pack(expand=True)
-                return
-
-            df['custo_total'] = df['paginas'] * df['custo_pagina']
-            self.df_atual = df
-            self.lbl_custo.configure(text=f"Custo Total: {f_moeda(df['custo_total'].sum())}")
-
-            pags = df['paginas'].sum()
-            arvores = pags / 8333.0
-            agua = pags * 10.0
-            co2 = pags * 0.015
-
-            self.lbl_esg_arvores.configure(text=f"🌳 Árvores Consumidas: {arvores:.2f}")
-            self.lbl_esg_agua.configure(text=f"💧 Consumo de Água: {agua:,.0f} L".replace(",", "X").replace(".", ",").replace("X", "."))
-            self.lbl_esg_co2.configure(text=f"☁️ Pegada de CO2: {co2:,.1f} Kg".replace(",", "X").replace(".", ",").replace("X", "."))
-
-            df['data_hora'] = pd.to_datetime(df['data_hora'])
-            bg, txt = ('#2b2b2b', 'white') if ctk.get_appearance_mode() == "Dark" else ('#ebebeb', 'black')
-
-            df_dept = df.groupby('departamento')['paginas'].sum().sort_values(ascending=True)
-            df_impressoras = df.groupby('impressora')['paginas'].sum()
-            df_usuarios_all = df.groupby('usuario_final')['paginas'].sum().sort_values(ascending=True)
-            
-            fig_geral, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(10, 6)); fig_geral.patch.set_facecolor(bg)
-            
-            ax1.set_facecolor(bg); ax1.barh(df_dept.index, df_dept.values, color='#9B59B6'); ax1.set_title('Consumo por Setor', color=txt, fontsize=11, pad=10); ax1.tick_params(colors=txt)
-            for s in ax1.spines.values(): s.set_edgecolor(txt)
-            ax1.spines['top'].set_visible(False); ax1.spines['right'].set_visible(False)
-            
-            ax2.set_facecolor(bg); ax2.pie(df_impressoras.values, labels=df_impressoras.index, autopct='%1.1f%%', startangle=90, colors=['#3498DB', '#E67E22', '#F1C40F', '#95A5A6'], textprops={'color': txt, 'weight': 'bold'}, wedgeprops={'edgecolor': bg, 'linewidth': 2}); ax2.set_title('Divisão por Impressora', color=txt, fontsize=11, pad=10)
-
-            ax3.set_facecolor(bg); ax3.barh(df_usuarios_all.tail(5).index, df_usuarios_all.tail(5).values, color='#E74C3C'); ax3.set_title('Top 5: Mais Impressões', color=txt, fontsize=11, pad=10, weight='bold'); ax3.tick_params(colors=txt)
-            for s in ax3.spines.values(): s.set_edgecolor(txt)
-            ax3.spines['top'].set_visible(False); ax3.spines['right'].set_visible(False)
-
-            ax4.set_facecolor(bg); ax4.barh(df_usuarios_all.head(5).index, df_usuarios_all.head(5).values, color='#2FA572'); ax4.set_title('Top 5: Menos Impressões', color=txt, fontsize=11, pad=10, weight='bold'); ax4.tick_params(colors=txt)
-            for s in ax4.spines.values(): s.set_edgecolor(txt)
-            ax4.spines['top'].set_visible(False); ax4.spines['right'].set_visible(False)
-
-            fig_geral.tight_layout(); FigureCanvasTkAgg(fig_geral, master=self.tab_geral).draw(); FigureCanvasTkAgg(fig_geral, master=self.tab_geral).get_tk_widget().pack(fill="both", expand=True)
-
-            fig_tempo, (ax5, ax6) = plt.subplots(2, 1, figsize=(10, 6)); fig_tempo.patch.set_facecolor(bg)
-            df['data_apenas'] = df['data_hora'].dt.date
-            df_dias = df.groupby('data_apenas')['paginas'].sum().sort_index(); rotulos_x = [d.strftime('%d/%m') for d in df_dias.index]
-            df_dias_acumulado = df_dias.cumsum() 
-
-            ax5.set_facecolor(bg)
-            cor_b = '#316a92' if ctk.get_appearance_mode() == "Dark" else '#85b5d9' 
-            barras_evo = ax5.bar(rotulos_x, df_dias.values, color=cor_b, label='Volume Diário')
-            for b in barras_evo:
-                h = b.get_height()
-                if h > 0: ax5.annotate(f"{int(h)}", xy=(b.get_x() + b.get_width()/2, h/2), ha='center', va='center', color=txt, fontsize=10)
-
-            ax5.plot(rotulos_x, df_dias.values, color='#0088ff', marker='o', linewidth=2.5, label='Tendência Diária')
-            ax5.plot(rotulos_x, df_dias_acumulado.values, color='#E74C3C', marker='o', linewidth=2.5, label='Evolução Acumulada')
-            if not df_dias_acumulado.empty: ax5.annotate(f"{int(df_dias_acumulado.values[-1])}", xy=(rotulos_x[-1], df_dias_acumulado.values[-1]), xytext=(0, 6), textcoords="offset points", ha='center', va='bottom', color=txt, weight='bold')
-
-            ax5.set_title(f"Evolução Diária e Crescimento (Utilizador: {usu})" if usu != "Todos" else "Evolução Diária e Crescimento Acumulado", color=txt, fontsize=12, pad=10)
-            ax5.tick_params(colors=txt, axis='x', rotation=45)
-            for s in ax5.spines.values(): s.set_edgecolor(txt)
-            ax5.spines['top'].set_visible(False); ax5.spines['right'].set_visible(False)
-            leg = ax5.legend(loc='upper left', frameon=False)
-            for t in leg.get_texts(): t.set_color(txt)
-
-            df['hora'] = df['data_hora'].dt.hour
-            df_horas = df.groupby('hora')['paginas'].sum()
-            ax6.set_facecolor(bg)
-            barras_h = ax6.bar(df_horas.index, df_horas.values, color='#E67E22')
-            for b in barras_h:
-                h = b.get_height()
-                if h > 0: ax6.annotate(f"{int(h)}", xy=(b.get_x() + b.get_width()/2, h), xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', color=txt, fontsize=10)
-
-            ax6.set_title('Horários de Maior Sobrecarga (Picos do Dia)', color=txt, fontsize=12, pad=10)
-            ax6.tick_params(colors=txt)
-            for s in ax6.spines.values(): s.set_edgecolor(txt)
-            ax6.spines['top'].set_visible(False); ax6.spines['right'].set_visible(False)
-            ax6.set_xticks(df_horas.index); ax6.set_xticklabels([f"{h}h" for h in df_horas.index])
-
-            fig_tempo.tight_layout(); FigureCanvasTkAgg(fig_tempo, master=self.tab_tempo).draw(); FigureCanvasTkAgg(fig_tempo, master=self.tab_tempo).get_tk_widget().pack(fill="both", expand=True)
-            
-        except Exception as e: messagebox.showerror("Erro", str(e))
+        except Exception: return
         finally: sessao.close()
+
+        if df.empty: return
+
+        # Limpar gráficos e tabelas antigas
+        for widget in self.tab_geral.winfo_children(): widget.destroy()
+        for widget in self.tab_tempo.winfo_children(): widget.destroy()
+        for widget in self.frame_audit_esq.winfo_children(): widget.destroy()
+        for item in self.tree_top10.get_children(): self.tree_top10.delete(item)
+        for item in self.tree_repetidos.get_children(): self.tree_repetidos.delete(item)
+
+        bg = "#2b2b2b" if ctk.get_appearance_mode() == "Dark" else "#ffffff"
+        txt = "white" if bg == "#2b2b2b" else "black"
+
+        # ==========================================
+        # 1. VISÃO GERAL
+        # ==========================================
+        df_dept = df.groupby('departamento')['paginas'].sum().sort_values(ascending=True)
+        df_impressoras = df.groupby('impressora')['paginas'].sum().sort_values(ascending=False)
+        df_usuarios_all = df.groupby('nome_final')['paginas'].sum().sort_values(ascending=True)
+
+        fig_geral, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(10, 6)); fig_geral.patch.set_facecolor(bg)
+        
+        ax1.set_facecolor(bg)
+        barras_dept = ax1.barh(df_dept.index, df_dept.values, color='#9B59B6')
+        for b in barras_dept:
+            w = b.get_width()
+            if w > 0: ax1.annotate(f"{int(w)}", xy=(w, b.get_y() + b.get_height()/2), xytext=(5, 0), textcoords="offset points", ha='left', va='center', color=txt, fontsize=10, weight='bold')
+        ax1.set_title('Consumo por Setor', color=txt, fontsize=11, pad=10); ax1.tick_params(colors=txt)
+        for s in ax1.spines.values(): s.set_edgecolor(txt)
+        ax1.spines['top'].set_visible(False); ax1.spines['right'].set_visible(False)
+        ax1.set_xlim(right=ax1.get_xlim()[1] * 1.15)
+        
+        ax2.set_facecolor(bg)
+        ax2.pie(df_impressoras.values, labels=df_impressoras.index, autopct='%1.1f%%', startangle=90, colors=['#3498DB', '#E67E22', '#F1C40F', '#95A5A6'], textprops={'color': txt, 'weight': 'bold'}, wedgeprops={'edgecolor': bg, 'linewidth': 2})
+        ax2.set_title('Divisão por Equipamento', color=txt, fontsize=11, pad=10)
+
+        ax3.set_facecolor(bg)
+        barras_top = ax3.barh(df_usuarios_all.tail(5).index, df_usuarios_all.tail(5).values, color='#E74C3C')
+        for b in barras_top:
+            w = b.get_width()
+            if w > 0: ax3.annotate(f"{int(w)}", xy=(w, b.get_y() + b.get_height()/2), xytext=(5, 0), textcoords="offset points", ha='left', va='center', color=txt, fontsize=10, weight='bold')
+        ax3.set_title('Top 5: Mais Impressões', color=txt, fontsize=11, pad=10, weight='bold'); ax3.tick_params(colors=txt)
+        for s in ax3.spines.values(): s.set_edgecolor(txt)
+        ax3.spines['top'].set_visible(False); ax3.spines['right'].set_visible(False)
+        ax3.set_xlim(right=ax3.get_xlim()[1] * 1.15)
+
+        ax4.set_facecolor(bg)
+        barras_bot = ax4.barh(df_usuarios_all.head(5).index, df_usuarios_all.head(5).values, color='#2FA572')
+        for b in barras_bot:
+            w = b.get_width()
+            if w > 0: ax4.annotate(f"{int(w)}", xy=(w, b.get_y() + b.get_height()/2), xytext=(5, 0), textcoords="offset points", ha='left', va='center', color=txt, fontsize=10, weight='bold')
+        ax4.set_title('Top 5: Menos Impressões', color=txt, fontsize=11, pad=10, weight='bold'); ax4.tick_params(colors=txt)
+        for s in ax4.spines.values(): s.set_edgecolor(txt)
+        ax4.spines['top'].set_visible(False); ax4.spines['right'].set_visible(False)
+        ax4.set_xlim(right=ax4.get_xlim()[1] * 1.15)
+
+        fig_geral.tight_layout(); FigureCanvasTkAgg(fig_geral, master=self.tab_geral).draw(); FigureCanvasTkAgg(fig_geral, master=self.tab_geral).get_tk_widget().pack(fill="both", expand=True)
+
+        # ==========================================
+        # 2. ANÁLISE TEMPORAL 
+        # ==========================================
+        df['data_hora'] = pd.to_datetime(df['data_hora'])
+        
+        df_dia = df.groupby(df['data_hora'].dt.strftime('%d/%m'))['paginas'].sum().sort_index()
+        df_acumulado = df_dia.cumsum()
+        
+        df['hora'] = df['data_hora'].dt.hour
+        df_hora = df.groupby('hora')['paginas'].sum().sort_index()
+
+        fig_tempo, (ax_evol, ax_hora) = plt.subplots(2, 1, figsize=(10, 8))
+        fig_tempo.patch.set_facecolor(bg)
+
+        # Gráfico Superior
+        ax_evol.set_facecolor(bg)
+        x_dias = range(len(df_dia))
+        
+        ax_evol.bar(x_dias, df_dia.values, color='#316b93', label='Volume Diário', alpha=0.9)
+        ax_evol.plot(x_dias, df_dia.values, marker='o', color='#0088ff', linewidth=2, label='Tendência Diária')
+        ax_evol.plot(x_dias, df_acumulado.values, marker='o', color='#e74c3c', linewidth=2, label='Evolução Acumulada')
+        
+        ax_evol.set_xticks(x_dias)
+        ax_evol.set_xticklabels(df_dia.index, rotation=45, color=txt)
+        ax_evol.set_title('Evolução Diária e Crescimento Acumulado', color=txt, pad=15)
+        ax_evol.tick_params(colors=txt)
+        for s in ax_evol.spines.values(): s.set_edgecolor(txt)
+        ax_evol.spines['top'].set_visible(False); ax_evol.spines['right'].set_visible(False)
+        
+        for i, v in enumerate(df_dia.values):
+            ax_evol.text(i, v/2, str(int(v)), ha='center', va='center', color='white', weight='bold') 
+            ax_evol.text(i, df_acumulado.values[i] + (df_acumulado.max()*0.03), str(int(df_acumulado.values[i])), ha='center', va='bottom', color=txt, weight='bold') 
+        
+        ax_evol.legend(loc='upper left', frameon=False, labelcolor=txt)
+
+        # Gráfico Inferior
+        ax_hora.set_facecolor(bg)
+        barras_hora = ax_hora.bar(df_hora.index, df_hora.values, color='#e67e22')
+        
+        ax_hora.set_xticks(df_hora.index)
+        ax_hora.set_xticklabels([f"{int(h)}h" for h in df_hora.index], color=txt)
+        ax_hora.set_title('Horários de Maior Sobrecarga (Picos do Dia)', color=txt, pad=15)
+        ax_hora.tick_params(colors=txt)
+        for s in ax_hora.spines.values(): s.set_edgecolor(txt)
+        ax_hora.spines['top'].set_visible(False); ax_hora.spines['right'].set_visible(False)
+        
+        for b in barras_hora:
+            h = b.get_height()
+            ax_hora.text(b.get_x() + b.get_width()/2, h + (df_hora.max()*0.02), str(int(h)), ha='center', va='bottom', color=txt, weight='bold')
+
+        fig_tempo.tight_layout(); FigureCanvasTkAgg(fig_tempo, master=self.tab_tempo).draw(); FigureCanvasTkAgg(fig_tempo, master=self.tab_tempo).get_tk_widget().pack(fill="both", expand=True)
+
+        # ==========================================
+        # 3. AUDITORIA & DESPERDÍCIO (AGORA COM DUPLICADOS)
+        # ==========================================
+        df['extensao'] = df['documento'].apply(self.extrair_extensao)
+        df_ext = df.groupby('extensao')['paginas'].sum().sort_values(ascending=False).head(5)
+        
+        fig_audit, ax_audit = plt.subplots(figsize=(5, 5)); fig_audit.patch.set_facecolor(bg); ax_audit.set_facecolor(bg)
+        if not df_ext.empty:
+            ax_audit.pie(df_ext.values, labels=df_ext.index, autopct='%1.1f%%', startangle=90, 
+                         colors=['#E74C3C', '#8E44AD', '#3498DB', '#1ABC9C', '#F39C12'], 
+                         textprops={'color': txt, 'weight': 'bold'}, 
+                         wedgeprops={'edgecolor': bg, 'linewidth': 2, 'width': 0.4}) 
+                     
+        ax_audit.set_title('Volume por Tipo de Ficheiro', color=txt, fontsize=12, pad=10, weight='bold')
+        fig_audit.tight_layout(); FigureCanvasTkAgg(fig_audit, master=self.frame_audit_esq).draw(); FigureCanvasTkAgg(fig_audit, master=self.frame_audit_esq).get_tk_widget().pack(fill="both", expand=True)
+
+        # 3A. Tabela Top 10 Extensos
+        top_10 = df.nlargest(10, 'paginas')
+        for _, r in top_10.iterrows():
+            d_str = r['data_hora'].strftime("%d/%m %H:%M")
+            self.tree_top10.insert("", "end", values=(d_str, r['nome_final'], int(r['paginas']), r['documento']))
+
+        # 3B. Tabela Top 10 Duplicados (Desperdício)
+        # Agrupa pelo mesmo documento e mesmo utilizador
+        df_duplicados = df.groupby(['documento', 'nome_final']).agg(
+            vezes=('documento', 'count'),
+            paginas_totais=('paginas', 'sum')
+        ).reset_index()
+        
+        # Filtra apenas os que foram impressos mais de 1 vez, ordenado pelos que mais se repetiram
+        df_duplicados = df_duplicados[df_duplicados['vezes'] > 1].sort_values(by=['vezes', 'paginas_totais'], ascending=[False, False]).head(10)
+        
+        for _, r in df_duplicados.iterrows():
+            self.tree_repetidos.insert("", "end", values=(f"{int(r['vezes'])}x", r['nome_final'], int(r['paginas_totais']), r['documento']))

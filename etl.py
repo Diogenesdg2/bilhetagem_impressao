@@ -5,13 +5,20 @@ from typing import Tuple
 
 def processar_csv_para_banco(caminho_csv: str, engine: Engine) -> Tuple[int, int]:
     """
-    Processa o arquivo CSV e insere apenas os dados não existentes.
+    Processa o arquivo CSV e insere apenas os dados não existentes,
+    ignorando documentos bloqueados (testes).
     Retorna uma tupla: (qtd_importados, qtd_ignorados)
     """
     # 1. Ler o CSV novo
     df_novo = pd.read_csv(caminho_csv, sep=';', encoding='utf-8')
     df_novo['DataHora'] = pd.to_datetime(df_novo['DataHora'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
     df_novo.columns = ['data_hora', 'terminal', 'usuario', 'impressora', 'paginas', 'documento']
+    
+    # --- REGRA DE AUDITORIA: BLOQUEIO DE DOCUMENTOS DE TESTE ---
+    # Ignora ficheiros específicos para não poluir as métricas reais
+    documentos_bloqueados = ['Lembretes_RH_21102026.pdf', 'Print Document']
+    df_novo = df_novo[~df_novo['documento'].isin(documentos_bloqueados)]
+    # -----------------------------------------------------------
     
     # 2. Ler o que já existe no banco de dados
     query = "SELECT data_hora, terminal, usuario, impressora, documento FROM logs_impressao"

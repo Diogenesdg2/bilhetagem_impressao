@@ -30,28 +30,28 @@ class ConfiguracaoImpressora(Base):
     nome_impressora = Column(String(100), unique=True, nullable=False)
     custo_pagina = Column(Float, default=0.0)
 
-# --- NOVAS TABELAS: AUTOMAÇÃO DE E-MAIL ---
-class ConfiguracaoEmail(Base):
-    __tablename__ = 'configuracao_email'
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    remetente = Column(String(100))
-    senha = Column(String(100))
-    destinatario = Column(String(100))
-    servidor = Column(String(100))
-    porta = Column(Integer)
-
 class HistoricoEnvio(Base):
     __tablename__ = 'historico_envios'
     id = Column(Integer, primary_key=True, autoincrement=True)
     mes_referencia = Column(String(10), unique=True) # Ex: "09/2026"
     data_envio = Column(DateTime, default=datetime.now)
 
+# --- TABELA CENTRAL DE CONFIGURAÇÕES DO SISTEMA ---
+class ConfiguracaoSistema(Base):
+    __tablename__ = 'configuracoes_sistema'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    caminho_csv = Column(String(255), default=r"D:\Relatorios")
+    remetente = Column(String(100), default="")
+    senha = Column(String(100), default="")
+    destinatario = Column(String(100), default="")
+    servidor_smtp = Column(String(100), default="")
+    porta_smtp = Column(Integer, default=465)
+
 def obter_sessao(string_conexao: str = "sqlite:///impressoes.db"):
     try:
         engine = create_engine(string_conexao, connect_args={'check_same_thread': False})
         Base.metadata.create_all(engine)
         
-        # Garante a existência da coluna caso o banco seja antigo
         with engine.begin() as conn:
             try: conn.execute(text("ALTER TABLE mapeamento_terminais ADD COLUMN departamento VARCHAR(100)"))
             except Exception: pass

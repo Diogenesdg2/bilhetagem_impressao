@@ -13,7 +13,7 @@ from email import encoders
 import tempfile
 import os
 
-from db import obter_sessao, MapeamentoTerminal, ConfiguracaoImpressora, ConfiguracaoEmail, HistoricoEnvio
+from db import obter_sessao, MapeamentoTerminal, ConfiguracaoImpressora, ConfiguracaoSistema, HistoricoEnvio
 from etl import processar_csv_para_banco
 from dashboard import DashboardFrame
 
@@ -36,7 +36,9 @@ class AppImpressoes(ctk.CTk):
         self.frame_toolbar = ctk.CTkFrame(self, fg_color="transparent"); self.frame_toolbar.pack(fill="x", padx=20, pady=5)
         ctk.CTkButton(self.frame_toolbar, text="Importar CSV 📂", command=self.importar_arquivo_csv, fg_color="#2FA572", hover_color="#1D7850", width=140).pack(side="left")
         ctk.CTkButton(self.frame_toolbar, text="Setores e Vínculos 👤", command=self.abrir_janela_mapeamento, fg_color="#0052cc", hover_color="#003d99", width=170).pack(side="left", padx=10)
-        ctk.CTkButton(self.frame_toolbar, text="Custos de Impressão 🖨️", command=self.abrir_janela_custos, fg_color="#E67E22", hover_color="#D35400", width=180).pack(side="left")
+        ctk.CTkButton(self.frame_toolbar, text="Custos de Impressão 🖨️", command=self.abrir_janela_custos, fg_color="#E67E22", hover_color="#D35400", width=180).pack(side="left", padx=(0, 10))
+        
+        ctk.CTkButton(self.frame_toolbar, text="⚙️ Configurações", command=self.abrir_janela_configuracoes, fg_color="#8E44AD", hover_color="#732D91", width=160).pack(side="left")
 
         self.titulos_originais_rel = {"Data": "Data", "Term": "Terminal", "Nome": "Nome", "Setor": "Departamento", "Imp": "Imp", "Pags": "Pags", "Custo": "Custo (R$)", "Doc": "Doc"}
 
@@ -52,9 +54,6 @@ class AppImpressoes(ctk.CTk):
         self.visao_dashboard.gerar_graficos()
         self.carregar_dados_relatorio()
 
-        # Gatilho Invisível: Corre 3 segundos após o sistema abrir para não travar a ecrã inicial
-        self.after(3000, self.verificar_envio_automatico)
-
     def encerrar_sistema(self):
         plt.close('all'); self.quit(); self.destroy()
 
@@ -65,16 +64,31 @@ class AppImpressoes(ctk.CTk):
         self.visao_dashboard.gerar_graficos()
 
     def importar_arquivo_csv(self):
-        caminho = filedialog.askopenfilename(title="Relatório", filetypes=[("CSV", "*.csv")])
-        if not caminho: return
+        """Lê automaticamente o ficheiro CSV mais recente na pasta configurada sem abrir janelas."""
+        sessao, _ = obter_sessao()
+        cfg = sessao.query(ConfiguracaoSistema).first()
+        pasta_cfg = cfg.caminho_csv if cfg and cfg.caminho_csv else r"D:\Relatorios"
+        sessao.close()
+
+        if not os.path.exists(pasta_cfg):
+            return messagebox.showerror("Erro de Diretório", f"A pasta configurada não foi encontrada:\n{pasta_cfg}\n\nVerifique em '⚙️ Configurações'.")
+
+        fich_csv = [os.path.join(pasta_cfg, f) for f in os.listdir(pasta_cfg) if f.lower().endswith('.csv')]
+        
+        if not fich_csv:
+            return messagebox.showwarning("Aviso", f"Nenhum ficheiro .csv foi encontrado na pasta:\n{pasta_cfg}")
+
+        caminho_mais_recente = max(fich_csv, key=os.path.getmtime)
+
         try:
             sessao, engine = obter_sessao()
-            imp, ign = processar_csv_para_banco(caminho, engine)
-            messagebox.showinfo("Importação", f"✅ Novos: {imp}\n⚠️ Ignorados: {ign}")
-            self.visao_dashboard.gerar_graficos(); self.carregar_valores_comboboxes(); self.carregar_dados_relatorio()
-            # Volta a verificar automação após carregar dados novos
-            self.verificar_envio_automatico()
-        except Exception as e: messagebox.showerror("Erro", str(e))
+            imp, ign = processar_csv_para_banco(caminho_mais_recente, engine)
+            messagebox.showinfo("Importação Direta", f"📁 Ficheiro lido: {os.path.basename(caminho_mais_recente)}\n\n✅ Novos registos: {imp}\n⚠️ Ignorados (duplicados): {ign}")
+            self.visao_dashboard.gerar_graficos()
+            self.carregar_valores_comboboxes()
+            self.carregar_dados_relatorio()
+        except Exception as e: 
+            messagebox.showerror("Erro de Importação", str(e))
 
     def abrir_calendario(self, entry_alvo):
         janela_cal = ctk.CTkToplevel(self); janela_cal.title("Data"); janela_cal.geometry("300x300"); janela_cal.attributes("-topmost", True); janela_cal.grab_set()
@@ -187,7 +201,7 @@ class AppImpressoes(ctk.CTk):
 
 
     # =========================================================
-    # ABA 3 E MÓDULO DE AUTOMAÇÃO (E-MAIL E FECHO)
+    # ABA 3 E CENTRAL DE RELATÓRIOS
     # =========================================================
     def montar_aba_exportacao(self):
         f_scr = ctk.CTkScrollableFrame(self.tab_exportacao, fg_color="transparent"); f_scr.pack(fill="both", expand=True, padx=10, pady=5)
@@ -222,10 +236,10 @@ class AppImpressoes(ctk.CTk):
         ctk.CTkButton(f_bd, text="📊 Exportar Excel", command=lambda: self.gerar_arquivo_central("detalhado", "excel"), fg_color="#1D6F42", hover_color="#144D2E", width=150).pack(side="left", padx=10)
 
         f_mail = ctk.CTkFrame(f_scr); f_mail.pack(fill="x", pady=(0, 10))
-        ctk.CTkLabel(f_mail, text="4. Automação (Fecho Mensal por E-mail)", font=ctk.CTkFont(weight="bold", size=14)).pack(anchor="w", padx=15, pady=(10, 0))
+        ctk.CTkLabel(f_mail, text="4. Envio de Relatório à Diretoria (Dia 01 até Hoje)", font=ctk.CTkFont(weight="bold", size=14)).pack(anchor="w", padx=15, pady=(10, 0))
         f_btn_mail = ctk.CTkFrame(f_mail, fg_color="transparent"); f_btn_mail.pack(pady=10)
-        ctk.CTkLabel(f_btn_mail, text="O sistema enviará o fecho do mês anterior automaticamente no dia 01.").pack(side="left", padx=10)
-        ctk.CTkButton(f_btn_mail, text="⚙️ Configurar Servidor / Disparo Manual", command=self.abrir_janela_email, fg_color="#8E44AD", hover_color="#732D91", width=250).pack(side="left", padx=10)
+        ctk.CTkLabel(f_btn_mail, text="Envia o acumulado do mês corrente em formato PDF e Excel.").pack(side="left", padx=10)
+        ctk.CTkButton(f_btn_mail, text="🚀 Enviar Relatório do Mês Agora", command=self.disparar_fecho_manual_central, fg_color="#8E44AD", hover_color="#732D91", width=240).pack(side="left", padx=10)
 
         ctk.CTkLabel(f_scr, text="Pré-visualização", font=ctk.CTkFont(size=14, slant="italic"), text_color="gray").pack(pady=(10, 0))
         self.frame_prev = ctk.CTkFrame(f_scr, height=220); self.frame_prev.pack(fill="both", expand=True, pady=5, padx=10); self.frame_prev.pack_propagate(False)
@@ -320,127 +334,27 @@ class AppImpressoes(ctk.CTk):
                 messagebox.showinfo("Sucesso", f"PDF guardado em:\n{caminho}")
             except Exception as e: messagebox.showerror("Erro PDF", str(e))
 
-    # =========================================================
-    # CONFIGURAÇÃO DE E-MAIL E NÚCLEO DE AUTOMAÇÃO (FECHO)
-    # =========================================================
-    def verificar_envio_automatico(self):
-        """Verifica se o e-mail do mês anterior foi enviado. Se não, INTERROGA o utilizador antes de enviar."""
+    def disparar_fecho_manual_central(self):
+        """Envia o relatório acumulado desde o dia 01 do mês corrente até à data de hoje."""
         hoje = datetime.now()
-        
-        # Matemática para descobrir o primeiro e último dia do MÊS ANTERIOR
-        primeiro_dia_atual = hoje.replace(day=1)
-        ultimo_dia_ant = primeiro_dia_atual - timedelta(days=1)
-        primeiro_dia_ant = ultimo_dia_ant.replace(day=1)
-        
-        mes_ref = primeiro_dia_ant.strftime("%m/%Y")
-        
+        d_ini_str = hoje.replace(day=1).strftime("%d/%m/%Y")
+        d_fim_str = hoje.strftime("%d/%m/%Y")
+        mes_ref = hoje.strftime("%m/%Y")
+
         sessao, _ = obter_sessao()
-        
-        # 1. Verifica se já enviámos o relatório para este "Mês/Ano"
-        ja_enviado = sessao.query(HistoricoEnvio).filter_by(mes_referencia=mes_ref).first()
-        if ja_enviado:
-            sessao.close(); return
-            
-        # 2. Verifica se o utilizador já guardou credenciais válidas
-        config = sessao.query(ConfiguracaoEmail).first()
-        if not config or not config.remetente or not config.senha or not config.destinatario:
-            sessao.close(); return
-            
-        sessao.close()
-        
-        # 3. Preparação das datas exatas do mês anterior (Ex: 01/09/2026 a 30/09/2026)
-        d_ini_str = primeiro_dia_ant.strftime("%d/%m/%Y")
-        d_fim_str = ultimo_dia_ant.strftime("%d/%m/%Y")
-        
-        # 4. ALERTA INTELIGENTE: Pede autorização antes de gerar o fecho
-        resposta = messagebox.askyesno(
-            "Fecho Mensal Pendente",
-            f"O sistema detetou que o mês de {mes_ref} terminou e o relatório de fecho ainda não foi enviado à diretoria.\n\n"
-            f"Já importou o último CSV contendo as impressões até ao dia {d_fim_str}?\n\n"
-            f"Deseja processar os cálculos e enviar o e-mail de fecho automaticamente agora?"
-        )
-
-        if resposta:
-            # Se o utilizador confirmar que já importou tudo, dispara o motor (não silencioso, para ver a confirmação)
-            try:
-                self.motor_envio_email(
-                    config.remetente, config.senha, config.destinatario, 
-                    config.servidor, config.porta, d_ini_str, d_fim_str, mes_ref, silencioso=False
-                )
-            except Exception as e:
-                messagebox.showerror("Erro na Automação", f"Falha ao processar fecho: {e}")
-
-    def abrir_janela_email(self):
-        jan = ctk.CTkToplevel(self); jan.title("Configurações de E-mail Corporativo"); jan.geometry("520x650"); jan.attributes("-topmost", True); jan.grab_set()
-
-        ctk.CTkLabel(jan, text="Configuração de Envio (SMTP)", font=ctk.CTkFont(weight="bold", size=16)).pack(pady=15)
-        ctk.CTkLabel(jan, text="Guarde as credenciais para o sistema fechar o mês automaticamente.", text_color="gray").pack(pady=(0, 15))
-
-        # Carrega credenciais guardadas se existirem
-        sessao, _ = obter_sessao()
-        config_atual = sessao.query(ConfiguracaoEmail).first()
+        cfg = sessao.query(ConfiguracaoSistema).first()
         sessao.close()
 
-        ctk.CTkLabel(jan, text="Seu E-mail Corporativo:").pack(anchor="w", padx=20)
-        e_rem = ctk.CTkEntry(jan, width=460); e_rem.pack(padx=20, pady=5)
-        
-        ctk.CTkLabel(jan, text="Senha (ou Senha de Aplicação):").pack(anchor="w", padx=20)
-        e_sen = ctk.CTkEntry(jan, width=460, show="*"); e_sen.pack(padx=20, pady=5)
+        if not cfg or not cfg.remetente or not cfg.senha or not cfg.destinatario:
+            return messagebox.showwarning("Aviso", "Configure as credenciais de SMTP primeiro no botão '⚙️ Configurações' no topo!")
 
-        ctk.CTkLabel(jan, text="E-mail da Diretoria (Destinatário):").pack(anchor="w", padx=20)
-        e_dest = ctk.CTkEntry(jan, width=460); e_dest.pack(padx=20, pady=5)
-
-        ctk.CTkLabel(jan, text="Configuração Avançada do Servidor (Requerido para domínios próprios):", font=ctk.CTkFont(weight="bold", size=12)).pack(anchor="w", padx=20, pady=(15, 5))
-        f_smtp = ctk.CTkFrame(jan, fg_color="transparent"); f_smtp.pack(fill="x", padx=20)
-
-        ctk.CTkLabel(f_smtp, text="Servidor SMTP:").grid(row=0, column=0, sticky="w", pady=2)
-        e_smtp = ctk.CTkEntry(f_smtp, width=280, placeholder_text="Ex: mail.viman.com.br")
-        e_smtp.grid(row=1, column=0, sticky="w", pady=5, padx=(0, 15))
-
-        ctk.CTkLabel(f_smtp, text="Porta:").grid(row=0, column=1, sticky="w", pady=2)
-        e_porta = ctk.CTkEntry(f_smtp, width=80, placeholder_text="465 ou 587")
-        e_porta.grid(row=1, column=1, sticky="w", pady=5)
-
-        # Preenche os campos se já houver config guardada
-        if config_atual:
-            e_rem.insert(0, config_atual.remetente or "")
-            e_sen.insert(0, config_atual.senha or "")
-            e_dest.insert(0, config_atual.destinatario or "")
-            e_smtp.insert(0, config_atual.servidor or "")
-            e_porta.insert(0, str(config_atual.porta) if config_atual.porta else "")
-
-        def guardar_config_e_enviar():
-            rem, sen, dest = e_rem.get().strip(), e_sen.get().strip(), e_dest.get().strip()
-            serv_manual, porta_manual = e_smtp.get().strip(), e_porta.get().strip()
-            
-            if not rem or not sen or not dest: 
-                return messagebox.showwarning("Aviso", "Preencha o E-mail, Senha e Destinatário.")
-
-            porta_int = int(porta_manual) if porta_manual.isdigit() else (587 if "outlook" in rem.lower() or "hotmail" in rem.lower() else 465)
-            
-            # Grava as credenciais no Banco de Dados
-            s, _ = obter_sessao()
-            conf = s.query(ConfiguracaoEmail).first()
-            if not conf: conf = ConfiguracaoEmail()
-            conf.remetente, conf.senha, conf.destinatario = rem, sen, dest
-            conf.servidor, conf.porta = serv_manual, porta_int
-            s.add(conf); s.commit(); s.close()
-
-            # Disparo Manual baseia-se nas datas que estão atualmente preenchidas na tela
-            d_ini, d_fim = self.pdf_data_ini.get().strip(), self.pdf_data_fim.get().strip()
-            mes_ref = "DISPARO_MANUAL"
-
+        if messagebox.askyesno("Envio de Relatório Acumulado", f"Deseja enviar o relatório de {d_ini_str} até hoje ({d_fim_str}) para {cfg.destinatario}?"):
             try:
-                self.motor_envio_email(rem, sen, dest, serv_manual, porta_int, d_ini, d_fim, mes_ref, silencioso=False)
-                jan.destroy()
+                self.motor_envio_email(cfg.remetente, cfg.senha, cfg.destinatario, cfg.servidor_smtp, cfg.porta_smtp, d_ini_str, d_fim_str, mes_ref, silencioso=False)
             except Exception as e:
-                messagebox.showerror("Erro de Envio SMTP", f"Falha na comunicação com o servidor:\n\n{e}\n\nVerifique se o Servidor e a Porta (geralmente 465 ou 587) correspondem ao seu provedor.")
-
-        ctk.CTkButton(jan, text="💾 Salvar Configuração e Testar Disparo", command=guardar_config_e_enviar, fg_color="#2FA572", hover_color="#1D7850", width=300, height=40).pack(pady=25)
+                messagebox.showerror("Erro", str(e))
 
     def motor_envio_email(self, rem, sen, dest, serv_manual, porta_int, d_ini, d_fim, mes_ref, silencioso):
-        """Motor isolado que extrai, gera os ficheiros PDF/Excel e comunica com o servidor SMTP."""
-        # 1. Extração Fixa por Data
         query = f'''SELECT l.data_hora, l.terminal, COALESCE(m.nome_real, l.usuario) as nome_final, COALESCE(m.departamento, 'Sem Setor') as departamento, l.impressora, l.paginas, COALESCE(i.custo_pagina, 0.0) as custo_pagina, l.documento 
                    FROM logs_impressao l LEFT JOIN mapeamento_terminais m ON UPPER(l.terminal) = UPPER(m.terminal) LEFT JOIN configuracao_impressoras i ON UPPER(l.impressora) = UPPER(i.nome_impressora) WHERE 1=1'''
         if d_ini: query += f" AND l.data_hora >= '{datetime.strptime(d_ini, '%d/%m/%Y').strftime('%Y-%m-%d 00:00:00')}'"
@@ -455,28 +369,29 @@ class AppImpressoes(ctk.CTk):
 
         df['custo_total'] = df['paginas'] * df['custo_pagina']
 
-        # 2. Geração dos Ficheiros Físicos
         temp_dir = tempfile.gettempdir()
-        pdf_path = os.path.join(temp_dir, "Resumo_Fecho_Mes.pdf")
-        excel_path = os.path.join(temp_dir, "Auditoria_Fecho_Mes.xlsx")
-        periodo = f"{d_ini or 'Início'} a {d_fim or 'Hoje'}"
+        pdf_path = os.path.join(temp_dir, "Resumo_Acumulado_Mes.pdf")
+        excel_path = os.path.join(temp_dir, "Auditoria_Acumulado_Mes.xlsx")
+        periodo = f"{d_ini} a {d_fim}"
 
         from relatorios import exportar_resumo_impressoras_pdf
         
-        # Gera PDF Sintético (Apenas Resumo de Impressoras)
+        # Correção segura para a coluna unificada de impressoras
         df_imp = df.copy()
-        df_imp['imp_agr'] = df_imp['impressora'].apply(lambda x: 'Contábil/Fiscal & Contratos' if str(x).upper() in ['CONTABIL_FISCAL', 'CONTRATOS'] else x)
-        exportar_resumo_impressoras_pdf(df_imp.rename(columns={'imp_agr': 'impressora'}), pdf_path, periodo)
+        def unificar_imp(nome):
+            if str(nome).strip().upper() in ['CONTABIL_FISCAL', 'CONTRATOS']: return 'Contábil/Fiscal & Contratos'
+            return nome
+        df_imp['impressora'] = df_imp['impressora'].apply(unificar_imp)
+        
+        exportar_resumo_impressoras_pdf(df_imp, pdf_path, periodo)
 
-        # Gera Excel Analítico (Auditoria)
         df_ex = df.rename(columns={'data_hora': 'Data', 'terminal': 'Terminal', 'nome_final': 'Utilizador', 'departamento': 'Setor', 'impressora': 'Impressora', 'paginas': 'Páginas', 'custo_pagina': 'Custo Fixo', 'custo_total': 'Custo Estimado', 'documento': 'Ficheiro'})
         df_ex.to_excel(excel_path, index=False)
 
-        # 3. Montagem do E-mail
         msg = MIMEMultipart()
-        msg['From'], msg['To'], msg['Subject'] = rem, dest, f"Relatório de Fecho Mensal de Impressões - {periodo}"
+        msg['From'], msg['To'], msg['Subject'] = rem, dest, f"Relatório de Impressões Acumulado - {periodo}"
         
-        corpo = f"Olá,\n\nSegue em anexo o Fecho Mensal de Impressões da Viman Contabilidade referente ao período de {periodo}.\n\n- Total de Páginas Impressas: {int(df['paginas'].sum())}\n- Custo Estimado Total: {f_moeda(df['custo_total'].sum())}\n\nAtenciosamente,\nSistema de Auditoria Interna."
+        corpo = f"Olá,\n\nSegue em anexo o relatório de impressões da Viman Contabilidade referente ao período de {periodo}.\n\n- Total de Páginas Impressas: {int(df['paginas'].sum())}\n- Custo Estimado Total: {f_moeda(df['custo_total'].sum())}\n\nAtenciosamente,\nSistema de Auditoria Interna."
         msg.attach(MIMEText(corpo, 'plain'))
 
         for f_path in [pdf_path, excel_path]:
@@ -487,7 +402,6 @@ class AppImpressoes(ctk.CTk):
             part.add_header("Content-Disposition", f"attachment; filename= {os.path.basename(f_path)}")
             msg.attach(part)
 
-        # 4. Roteamento Inteligente SMTP
         if serv_manual:
             servidor = serv_manual
         else:
@@ -503,15 +417,113 @@ class AppImpressoes(ctk.CTk):
         server.send_message(msg)
         server.quit()
 
-        # 5. Grava no Histórico se for um fecho automático válido
-        if mes_ref != "DISPARO_MANUAL":
+        if not silencioso:
+            messagebox.showinfo("Sucesso", "O relatório acumulado foi enviado à diretoria com sucesso!")
+
+
+    # =========================================================
+    # JANELA DE CONFIGURAÇÕES GLOBAIS (CAMINHO CSV E SMTP)
+    # =========================================================
+    def abrir_janela_configuracoes(self):
+        jan = ctk.CTkToplevel(self)
+        jan.title("Configurações do Sistema")
+        jan.geometry("560x650")
+        jan.attributes("-topmost", True)
+        jan.grab_set()
+
+        f_scr = ctk.CTkScrollableFrame(jan, fg_color="transparent")
+        f_scr.pack(fill="both", expand=True, padx=10, pady=10)
+
+        ctk.CTkLabel(f_scr, text="Configurações Globais do Sistema", font=ctk.CTkFont(weight="bold", size=16)).pack(pady=15)
+
+        sessao, _ = obter_sessao()
+        cfg = sessao.query(ConfiguracaoSistema).first()
+        if not cfg:
+            cfg = ConfiguracaoSistema(caminho_csv=r"D:\Relatorios", porta_smtp=465)
+            sessao.add(cfg); sessao.commit()
+        sessao.close()
+
+        f_box1 = ctk.CTkFrame(f_scr)
+        f_box1.pack(fill="x", padx=10, pady=10)
+        ctk.CTkLabel(f_box1, text="Pasta Padrão dos Relatórios CSV:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=15, pady=(10, 0))
+        
+        f_csv = ctk.CTkFrame(f_box1, fg_color="transparent")
+        f_csv.pack(fill="x", padx=15, pady=10)
+        
+        e_csv = ctk.CTkEntry(f_csv, width=380)
+        e_csv.pack(side="left", padx=(0, 5))
+        e_csv.insert(0, cfg.caminho_csv or r"D:\Relatorios")
+
+        def procurar_pasta():
+            pasta = filedialog.askdirectory(title="Selecione a pasta dos CSVs")
+            if pasta:
+                e_csv.delete(0, 'end'); e_csv.insert(0, pasta)
+
+        ctk.CTkButton(f_csv, text="📁 Procurar", command=procurar_pasta, width=90, fg_color="#3498DB", hover_color="#2980B9").pack(side="left")
+
+        f_box2 = ctk.CTkFrame(f_scr)
+        f_box2.pack(fill="x", padx=10, pady=10)
+        ctk.CTkLabel(f_box2, text="Parâmetros de Envio de E-mail (SMTP):", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=15, pady=(10, 0))
+        
+        f_mail = ctk.CTkFrame(f_box2, fg_color="transparent")
+        f_mail.pack(fill="x", padx=15, pady=10)
+
+        ctk.CTkLabel(f_mail, text="E-mail Remetente:").pack(anchor="w", pady=(5, 0))
+        e_rem = ctk.CTkEntry(f_mail, width=460); e_rem.pack(pady=(0, 8))
+        e_rem.insert(0, cfg.remetente or "")
+
+        ctk.CTkLabel(f_mail, text="Senha de Aplicação:").pack(anchor="w", pady=(5, 0))
+        e_sen = ctk.CTkEntry(f_mail, width=460, show="*"); e_sen.pack(pady=(0, 8))
+        e_sen.insert(0, cfg.senha or "")
+
+        ctk.CTkLabel(f_mail, text="E-mail da Diretoria (Destinatário):").pack(anchor="w", pady=(5, 0))
+        e_dest = ctk.CTkEntry(f_mail, width=460); e_dest.pack(pady=(0, 8))
+        e_dest.insert(0, cfg.destinatario or "")
+
+        f_srv = ctk.CTkFrame(f_mail, fg_color="transparent")
+        f_srv.pack(fill="x", pady=5)
+
+        f_serv_porta = ctk.CTkFrame(f_srv, fg_color="transparent")
+        f_serv_porta.pack(fill="x", pady=5)
+
+        ctk.CTkLabel(f_serv_porta, text="Servidor SMTP:").pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(f_serv_porta, text="Porta:").pack(side="left", padx=(120, 0))
+
+        f_inputs = ctk.CTkFrame(f_srv, fg_color="transparent")
+        f_inputs.pack(fill="x", pady=2)
+
+        e_serv = ctk.CTkEntry(f_inputs, width=330, placeholder_text="Ex: mail.viman.com.br")
+        e_serv.pack(side="left", padx=(0, 15))
+        e_serv.insert(0, cfg.servidor_smtp or "")
+
+        e_porta = ctk.CTkEntry(f_inputs, width=115, placeholder_text="465 ou 587")
+        e_porta.pack(side="left")
+        e_porta.insert(0, str(cfg.porta_smtp) if cfg.porta_smtp else "465")
+
+        def salvar_configuracoes():
+            c_path = e_csv.get().strip()
+            rem = e_rem.get().strip()
+            sen = e_sen.get().strip()
+            dest = e_dest.get().strip()
+            serv = e_serv.get().strip()
+            p_str = e_porta.get().strip()
+            p_int = int(p_str) if p_str.isdigit() else 465
+
             s, _ = obter_sessao()
-            if not s.query(HistoricoEnvio).filter_by(mes_referencia=mes_ref).first():
-                s.add(HistoricoEnvio(mes_referencia=mes_ref)); s.commit()
-            s.close()
-            print(f"Automação: E-mail do mês {mes_ref} enviado com sucesso.")
-        else:
-            if not silencioso: messagebox.showinfo("Sucesso", "O pacote de relatórios foi enviado à diretoria com sucesso!")
+            c = s.query(ConfiguracaoSistema).first()
+            if not c: c = ConfiguracaoSistema()
+            c.caminho_csv = c_path
+            c.remetente = rem
+            c.senha = sen
+            c.destinatario = dest
+            c.servidor_smtp = serv
+            c.porta_smtp = p_int
+            s.add(c); s.commit(); s.close()
+
+            messagebox.showinfo("Sucesso", "Configurações globais guardadas com sucesso!")
+            jan.destroy()
+
+        ctk.CTkButton(f_scr, text="💾 Salvar Configurações", command=salvar_configuracoes, fg_color="#2FA572", hover_color="#1D7850", width=280, height=45).pack(pady=20)
 
     # =========================================================
     # JANELA DE CADASTROS (CUSTOS E DEPARTAMENTOS)
