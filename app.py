@@ -26,7 +26,7 @@ class AppImpressoes(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Viman Contabilidade - Sistema de Bilhetagem Automático")
-        self.geometry("1250x780") 
+        self.geometry("1350x780") # Aumentei ligeiramente a largura para acomodar o novo campo
         self.protocol("WM_DELETE_WINDOW", self.encerrar_sistema)
         
         self.frame_header = ctk.CTkFrame(self, fg_color="transparent"); self.frame_header.pack(fill="x", padx=20, pady=10)
@@ -42,16 +42,33 @@ class AppImpressoes(ctk.CTk):
 
         self.titulos_originais_rel = {"Data": "Data", "Term": "Terminal", "Nome": "Nome", "Setor": "Departamento", "Imp": "Imp", "Pags": "Pags", "Custo": "Custo (R$)", "Doc": "Doc"}
 
-        self.tabview = ctk.CTkTabview(self); self.tabview.pack(fill="both", expand=True, padx=20, pady=10)
-        self.tab_dashboard = self.tabview.add("📊 Dashboard Visuais")
-        self.tab_relatorio = self.tabview.add("📄 Registos Detalhados")
-        self.tab_exportacao = self.tabview.add("📑 Central de Relatórios")
+        # Guarda a referência do Tabview para podermos mudar de aba via código
+        self.tabview_principal = ctk.CTkTabview(self)
+        self.tabview_principal.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        self.tab_dashboard = self.tabview_principal.add("📊 Dashboard Visuais")
+        self.tab_relatorio = self.tabview_principal.add("📄 Registos Detalhados")
+        self.tab_exportacao = self.tabview_principal.add("📑 Central de Relatórios")
         
         self.visao_dashboard = DashboardFrame(self.tab_dashboard); self.visao_dashboard.pack(fill="both", expand=True)
+        
         self.montar_aba_relatorio()
         self.montar_aba_exportacao()
         self.carregar_valores_comboboxes() 
         self.visao_dashboard.gerar_graficos()
+        self.carregar_dados_relatorio()
+
+    # --- MÁGICA DO DUPLO CLIQUE ---
+    def pesquisar_nos_registros(self, nome_documento):
+        """Recebe o documento clicado no Dashboard, muda a aba e faz a pesquisa"""
+        # 1. Muda para a aba de Registros Detalhados
+        self.tabview_principal.set("📄 Registos Detalhados")
+        
+        # 2. Insere o nome do documento no novo campo de busca
+        self.entrada_busca_doc.delete(0, 'end')
+        self.entrada_busca_doc.insert(0, nome_documento)
+        
+        # 3. Dispara o filtro
         self.carregar_dados_relatorio()
 
     def encerrar_sistema(self):
@@ -64,7 +81,6 @@ class AppImpressoes(ctk.CTk):
         self.visao_dashboard.gerar_graficos()
 
     def importar_arquivo_csv(self):
-        """Lê automaticamente o ficheiro CSV mais recente na pasta configurada sem abrir janelas."""
         sessao, _ = obter_sessao()
         cfg = sessao.query(ConfiguracaoSistema).first()
         pasta_cfg = cfg.caminho_csv if cfg and cfg.caminho_csv else r"D:\Relatorios"
@@ -144,17 +160,34 @@ class AppImpressoes(ctk.CTk):
     # =========================================================
     def montar_aba_relatorio(self):
         f_filt = ctk.CTkFrame(self.tab_relatorio, fg_color="transparent"); f_filt.pack(fill="x", pady=(0, 10))
-        ctk.CTkLabel(f_filt, text="Data Inicial:").grid(row=0, column=0, padx=(0, 5), pady=5, sticky="w"); self.entrada_data_ini = ctk.CTkEntry(f_filt, width=90, placeholder_text="DD/MM/AAAA"); self.entrada_data_ini.grid(row=0, column=1, padx=(0, 2), pady=5, sticky="w")
+        
+        # LINHA 1 DE FILTROS
+        ctk.CTkLabel(f_filt, text="Data Inicial:").grid(row=0, column=0, padx=(0, 5), pady=5, sticky="w")
+        self.entrada_data_ini = ctk.CTkEntry(f_filt, width=90, placeholder_text="DD/MM/AAAA"); self.entrada_data_ini.grid(row=0, column=1, padx=(0, 2), pady=5, sticky="w")
         ctk.CTkButton(f_filt, text="📅", width=30, command=lambda: self.abrir_calendario(self.entrada_data_ini)).grid(row=0, column=2, padx=(0, 10), pady=5, sticky="w")
-        ctk.CTkLabel(f_filt, text="Data Final:").grid(row=0, column=3, padx=(0, 5), pady=5, sticky="w"); self.entrada_data_fim = ctk.CTkEntry(f_filt, width=90, placeholder_text="DD/MM/AAAA"); self.entrada_data_fim.grid(row=0, column=4, padx=(0, 2), pady=5, sticky="w")
+        
+        ctk.CTkLabel(f_filt, text="Data Final:").grid(row=0, column=3, padx=(0, 5), pady=5, sticky="w")
+        self.entrada_data_fim = ctk.CTkEntry(f_filt, width=90, placeholder_text="DD/MM/AAAA"); self.entrada_data_fim.grid(row=0, column=4, padx=(0, 2), pady=5, sticky="w")
         ctk.CTkButton(f_filt, text="📅", width=30, command=lambda: self.abrir_calendario(self.entrada_data_fim)).grid(row=0, column=5, padx=(0, 10), pady=5, sticky="w")
-        ctk.CTkLabel(f_filt, text="Departamento:").grid(row=0, column=6, padx=(0, 5), pady=5, sticky="w"); self.cb_rel_dept = ctk.CTkComboBox(f_filt, width=150, values=["Todos"]); self.cb_rel_dept.grid(row=0, column=7, padx=(0, 10), pady=5, sticky="w")
+        
+        ctk.CTkLabel(f_filt, text="Departamento:").grid(row=0, column=6, padx=(0, 5), pady=5, sticky="w")
+        self.cb_rel_dept = ctk.CTkComboBox(f_filt, width=150, values=["Todos"]); self.cb_rel_dept.grid(row=0, column=7, padx=(0, 10), pady=5, sticky="w")
+        
+        # NOVO: CAMPO DE BUSCA DE DOCUMENTO
+        ctk.CTkLabel(f_filt, text="Buscar Documento:").grid(row=0, column=8, padx=(10, 5), pady=5, sticky="w")
+        self.entrada_busca_doc = ctk.CTkEntry(f_filt, width=160, placeholder_text="Ex: rescisao, nfe")
+        self.entrada_busca_doc.grid(row=0, column=9, padx=(0, 10), pady=5, sticky="w")
 
-        ctk.CTkLabel(f_filt, text="Utilizador:").grid(row=1, column=0, padx=(0, 5), pady=5, sticky="w"); self.cb_rel_usuario = ctk.CTkComboBox(f_filt, width=150, values=["Todos"]); self.cb_rel_usuario.grid(row=1, column=1, columnspan=2, padx=(0, 10), pady=5, sticky="w")
-        ctk.CTkLabel(f_filt, text="Impressora:").grid(row=1, column=3, padx=(0, 5), pady=5, sticky="w"); self.cb_rel_impressora = ctk.CTkComboBox(f_filt, width=150, values=["Todos"]); self.cb_rel_impressora.grid(row=1, column=4, columnspan=2, padx=(0, 10), pady=5, sticky="w")
-        ctk.CTkButton(f_filt, text="Filtrar 🔍", command=self.carregar_dados_relatorio, width=100).grid(row=1, column=6, padx=5, pady=5, sticky="w")
+        # LINHA 2 DE FILTROS
+        ctk.CTkLabel(f_filt, text="Utilizador:").grid(row=1, column=0, padx=(0, 5), pady=5, sticky="w")
+        self.cb_rel_usuario = ctk.CTkComboBox(f_filt, width=150, values=["Todos"]); self.cb_rel_usuario.grid(row=1, column=1, columnspan=2, padx=(0, 10), pady=5, sticky="w")
+        
+        ctk.CTkLabel(f_filt, text="Impressora:").grid(row=1, column=3, padx=(0, 5), pady=5, sticky="w")
+        self.cb_rel_impressora = ctk.CTkComboBox(f_filt, width=150, values=["Todos"]); self.cb_rel_impressora.grid(row=1, column=4, columnspan=2, padx=(0, 10), pady=5, sticky="w")
+        
+        ctk.CTkButton(f_filt, text="Filtrar 🔍", command=self.carregar_dados_relatorio, width=100, fg_color="#2FA572", hover_color="#1D7850").grid(row=1, column=6, padx=5, pady=5, sticky="w")
         ctk.CTkButton(f_filt, text="Limpar", command=self.limpar_filtros_relatorio, width=70, fg_color="#555", hover_color="#333").grid(row=1, column=7, padx=5, pady=5, sticky="w")
-        ctk.CTkButton(f_filt, text="Desfazer Ordenação ↺", command=self.carregar_dados_relatorio, width=150, fg_color="#E67E22", hover_color="#D35400").grid(row=1, column=8, padx=5, pady=5, sticky="w")
+        ctk.CTkButton(f_filt, text="Desfazer Ordenação ↺", command=self.carregar_dados_relatorio, width=150, fg_color="#E67E22", hover_color="#D35400").grid(row=1, column=8, columnspan=2, padx=5, pady=5, sticky="w")
 
         f_rod = ctk.CTkFrame(self.tab_relatorio, fg_color="transparent"); f_rod.pack(side="bottom", fill="x", pady=(10, 0))
         self.lbl_total_rel = ctk.CTkLabel(f_rod, text="Páginas: 0 | Custo: R$ 0,00", font=ctk.CTkFont(size=16, weight="bold"), text_color="#2FA572"); self.lbl_total_rel.pack(side="right", padx=10)
@@ -175,6 +208,8 @@ class AppImpressoes(ctk.CTk):
                 self.tree_rel.heading(c, text=self.titulos_originais_rel[c], command=lambda _c=c: self.ordenar_coluna_treeview(self.tree_rel, _c, False))
 
         d_ini, d_fim, usu, imp, dept = self.entrada_data_ini.get().strip(), self.entrada_data_fim.get().strip(), self.cb_rel_usuario.get(), self.cb_rel_impressora.get(), self.cb_rel_dept.get()
+        busca_doc = self.entrada_busca_doc.get().strip().lower() # Pega o texto da busca
+
         query = '''SELECT l.data_hora, l.terminal, COALESCE(m.nome_real, l.usuario) as nome_final, COALESCE(m.departamento, 'Sem Setor') as departamento, l.impressora, l.paginas, COALESCE(i.custo_pagina, 0.0) as custo_pagina, l.documento 
                    FROM logs_impressao l LEFT JOIN mapeamento_terminais m ON UPPER(l.terminal) = UPPER(m.terminal) LEFT JOIN configuracao_impressoras i ON UPPER(l.impressora) = UPPER(i.nome_impressora) WHERE 1=1'''
         try:
@@ -183,6 +218,7 @@ class AppImpressoes(ctk.CTk):
             if usu and usu != "Todos": query += f" AND LOWER(COALESCE(m.nome_real, l.usuario)) = LOWER('{usu}')"
             if imp and imp != "Todos": query += f" AND LOWER(l.impressora) = LOWER('{imp}')"
             if dept and dept != "Todos": query += f" AND LOWER(COALESCE(m.departamento, 'Sem Setor')) = LOWER('{dept}')"
+            if busca_doc: query += f" AND LOWER(l.documento) LIKE '%{busca_doc}%'" # Aplica o filtro do documento na tabela
         except ValueError: return messagebox.showerror("Erro", "Formato de data inválido.")
 
         query += " ORDER BY l.data_hora DESC"
@@ -197,7 +233,9 @@ class AppImpressoes(ctk.CTk):
         finally: sessao.close()
 
     def limpar_filtros_relatorio(self):
-        self.entrada_data_ini.delete(0, 'end'); self.entrada_data_fim.delete(0, 'end'); self.cb_rel_usuario.set("Todos"); self.cb_rel_impressora.set("Todos"); self.cb_rel_dept.set("Todos"); self.carregar_dados_relatorio()
+        self.entrada_data_ini.delete(0, 'end'); self.entrada_data_fim.delete(0, 'end'); self.cb_rel_usuario.set("Todos"); self.cb_rel_impressora.set("Todos"); self.cb_rel_dept.set("Todos"); 
+        self.entrada_busca_doc.delete(0, 'end') # Limpa o campo de busca
+        self.carregar_dados_relatorio()
 
 
     # =========================================================
@@ -335,7 +373,6 @@ class AppImpressoes(ctk.CTk):
             except Exception as e: messagebox.showerror("Erro PDF", str(e))
 
     def disparar_fecho_manual_central(self):
-        """Envia o relatório acumulado desde o dia 01 do mês corrente até à data de hoje."""
         hoje = datetime.now()
         d_ini_str = hoje.replace(day=1).strftime("%d/%m/%Y")
         d_fim_str = hoje.strftime("%d/%m/%Y")
@@ -376,7 +413,6 @@ class AppImpressoes(ctk.CTk):
 
         from relatorios import exportar_resumo_impressoras_pdf
         
-        # Correção segura para a coluna unificada de impressoras
         df_imp = df.copy()
         def unificar_imp(nome):
             if str(nome).strip().upper() in ['CONTABIL_FISCAL', 'CONTRATOS']: return 'Contábil/Fiscal & Contratos'
@@ -419,7 +455,6 @@ class AppImpressoes(ctk.CTk):
 
         if not silencioso:
             messagebox.showinfo("Sucesso", "O relatório acumulado foi enviado à diretoria com sucesso!")
-
 
     # =========================================================
     # JANELA DE CONFIGURAÇÕES GLOBAIS (CAMINHO CSV E SMTP)
