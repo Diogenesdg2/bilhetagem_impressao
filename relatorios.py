@@ -1,4 +1,3 @@
-# relatorios.py
 import pandas as pd
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
@@ -85,3 +84,65 @@ def exportar_relatorio_detalhado_pdf(df: pd.DataFrame, caminho: str, periodo: st
         ('FONTSIZE', (0, -1), (-1, -1), 9), ('GRID', (0, 0), (-1, -1), 0.5, colors.black), ('SPAN', (0, -1), (4, -1))
     ]))
     elementos.append(tabela); pdf.build(elementos)
+
+def exportar_auditoria_extensos_pdf(df, caminho, periodo):
+    doc = SimpleDocTemplate(caminho, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    elementos = []
+    estilos = getSampleStyleSheet()
+    estilo_normal = estilos["Normal"]
+    estilo_titulo = estilos["Title"]
+
+    elementos.append(Paragraph(f"Auditoria: Top Documentos Mais Extensos", estilo_titulo))
+    elementos.append(Paragraph(f"Período: {periodo}", estilo_normal))
+    elementos.append(Spacer(1, 20))
+
+    dados = [["Data", "Utilizador", "Setor", "Páginas", "Documento"]]
+    for _, r in df.iterrows():
+        doc_text = Paragraph(str(r['Ficheiro']), estilo_normal)
+        dados.append([str(r['Data']), str(r['Utilizador']), str(r['Setor']), str(r['Páginas']), doc_text])
+
+    tabela = Table(dados, colWidths=[90, 110, 110, 50, 420])
+    tabela.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#2FA572")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (4, 1), (4, -1), 'LEFT'), 
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#f4f4f4")),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    elementos.append(tabela)
+    doc.build(elementos)
+
+def exportar_auditoria_duplicados_pdf(df, caminho, periodo):
+    doc = SimpleDocTemplate(caminho, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    elementos = []
+    estilos = getSampleStyleSheet()
+    estilo_normal = estilos["Normal"]
+    estilo_titulo = estilos["Title"]
+
+    elementos.append(Paragraph(f"Auditoria: Top Impressões Duplicadas (Desperdício)", estilo_titulo))
+    elementos.append(Paragraph(f"Período: {periodo}", estilo_normal))
+    elementos.append(Spacer(1, 20))
+
+    dados = [["Qtd", "Utilizador", "Setor", "Total Páginas", "Documento"]]
+    for _, r in df.iterrows():
+        doc_text = Paragraph(str(r['Ficheiro']), estilo_normal)
+        dados.append([str(r['Qtd Impressões']), str(r['Utilizador']), str(r['Setor']), str(r['Total Páginas']), doc_text])
+
+    tabela = Table(dados, colWidths=[60, 120, 120, 80, 400])
+    tabela.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#E74C3C")), 
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (4, 1), (4, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#f4f4f4")),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    elementos.append(tabela)
+    doc.build(elementos)

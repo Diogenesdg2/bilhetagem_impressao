@@ -26,7 +26,7 @@ class AppImpressoes(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Viman Contabilidade - Sistema de Bilhetagem Automático")
-        self.geometry("1350x780") # Aumentei ligeiramente a largura para acomodar o novo campo
+        self.geometry("1350x780") 
         self.protocol("WM_DELETE_WINDOW", self.encerrar_sistema)
         
         self.frame_header = ctk.CTkFrame(self, fg_color="transparent"); self.frame_header.pack(fill="x", padx=20, pady=10)
@@ -42,7 +42,6 @@ class AppImpressoes(ctk.CTk):
 
         self.titulos_originais_rel = {"Data": "Data", "Term": "Terminal", "Nome": "Nome", "Setor": "Departamento", "Imp": "Imp", "Pags": "Pags", "Custo": "Custo (R$)", "Doc": "Doc"}
 
-        # Guarda a referência do Tabview para podermos mudar de aba via código
         self.tabview_principal = ctk.CTkTabview(self)
         self.tabview_principal.pack(fill="both", expand=True, padx=20, pady=10)
         
@@ -58,17 +57,10 @@ class AppImpressoes(ctk.CTk):
         self.visao_dashboard.gerar_graficos()
         self.carregar_dados_relatorio()
 
-    # --- MÁGICA DO DUPLO CLIQUE ---
     def pesquisar_nos_registros(self, nome_documento):
-        """Recebe o documento clicado no Dashboard, muda a aba e faz a pesquisa"""
-        # 1. Muda para a aba de Registros Detalhados
         self.tabview_principal.set("📄 Registos Detalhados")
-        
-        # 2. Insere o nome do documento no novo campo de busca
         self.entrada_busca_doc.delete(0, 'end')
         self.entrada_busca_doc.insert(0, nome_documento)
-        
-        # 3. Dispara o filtro
         self.carregar_dados_relatorio()
 
     def encerrar_sistema(self):
@@ -128,6 +120,8 @@ class AppImpressoes(ctk.CTk):
                 self.cb_rel_dept.configure(values=depts); self.cb_rel_dept.set("Todos")
                 self.cb_rel_usuario.configure(values=usrs); self.cb_rel_usuario.set("Todos")
                 self.cb_rel_impressora.configure(values=imps); self.cb_rel_impressora.set("Todos")
+            if hasattr(self, 'cb_dept_audit'):
+                self.cb_dept_audit.configure(values=depts); self.cb_dept_audit.set("Todos")
         except Exception: pass
         finally: sessao.close()
 
@@ -161,7 +155,6 @@ class AppImpressoes(ctk.CTk):
     def montar_aba_relatorio(self):
         f_filt = ctk.CTkFrame(self.tab_relatorio, fg_color="transparent"); f_filt.pack(fill="x", pady=(0, 10))
         
-        # LINHA 1 DE FILTROS
         ctk.CTkLabel(f_filt, text="Data Inicial:").grid(row=0, column=0, padx=(0, 5), pady=5, sticky="w")
         self.entrada_data_ini = ctk.CTkEntry(f_filt, width=90, placeholder_text="DD/MM/AAAA"); self.entrada_data_ini.grid(row=0, column=1, padx=(0, 2), pady=5, sticky="w")
         ctk.CTkButton(f_filt, text="📅", width=30, command=lambda: self.abrir_calendario(self.entrada_data_ini)).grid(row=0, column=2, padx=(0, 10), pady=5, sticky="w")
@@ -173,12 +166,10 @@ class AppImpressoes(ctk.CTk):
         ctk.CTkLabel(f_filt, text="Departamento:").grid(row=0, column=6, padx=(0, 5), pady=5, sticky="w")
         self.cb_rel_dept = ctk.CTkComboBox(f_filt, width=150, values=["Todos"]); self.cb_rel_dept.grid(row=0, column=7, padx=(0, 10), pady=5, sticky="w")
         
-        # NOVO: CAMPO DE BUSCA DE DOCUMENTO
         ctk.CTkLabel(f_filt, text="Buscar Documento:").grid(row=0, column=8, padx=(10, 5), pady=5, sticky="w")
         self.entrada_busca_doc = ctk.CTkEntry(f_filt, width=160, placeholder_text="Ex: rescisao, nfe")
         self.entrada_busca_doc.grid(row=0, column=9, padx=(0, 10), pady=5, sticky="w")
 
-        # LINHA 2 DE FILTROS
         ctk.CTkLabel(f_filt, text="Utilizador:").grid(row=1, column=0, padx=(0, 5), pady=5, sticky="w")
         self.cb_rel_usuario = ctk.CTkComboBox(f_filt, width=150, values=["Todos"]); self.cb_rel_usuario.grid(row=1, column=1, columnspan=2, padx=(0, 10), pady=5, sticky="w")
         
@@ -208,7 +199,7 @@ class AppImpressoes(ctk.CTk):
                 self.tree_rel.heading(c, text=self.titulos_originais_rel[c], command=lambda _c=c: self.ordenar_coluna_treeview(self.tree_rel, _c, False))
 
         d_ini, d_fim, usu, imp, dept = self.entrada_data_ini.get().strip(), self.entrada_data_fim.get().strip(), self.cb_rel_usuario.get(), self.cb_rel_impressora.get(), self.cb_rel_dept.get()
-        busca_doc = self.entrada_busca_doc.get().strip().lower() # Pega o texto da busca
+        busca_doc = self.entrada_busca_doc.get().strip().lower()
 
         query = '''SELECT l.data_hora, l.terminal, COALESCE(m.nome_real, l.usuario) as nome_final, COALESCE(m.departamento, 'Sem Setor') as departamento, l.impressora, l.paginas, COALESCE(i.custo_pagina, 0.0) as custo_pagina, l.documento 
                    FROM logs_impressao l LEFT JOIN mapeamento_terminais m ON UPPER(l.terminal) = UPPER(m.terminal) LEFT JOIN configuracao_impressoras i ON UPPER(l.impressora) = UPPER(i.nome_impressora) WHERE 1=1'''
@@ -218,7 +209,7 @@ class AppImpressoes(ctk.CTk):
             if usu and usu != "Todos": query += f" AND LOWER(COALESCE(m.nome_real, l.usuario)) = LOWER('{usu}')"
             if imp and imp != "Todos": query += f" AND LOWER(l.impressora) = LOWER('{imp}')"
             if dept and dept != "Todos": query += f" AND LOWER(COALESCE(m.departamento, 'Sem Setor')) = LOWER('{dept}')"
-            if busca_doc: query += f" AND LOWER(l.documento) LIKE '%{busca_doc}%'" # Aplica o filtro do documento na tabela
+            if busca_doc: query += f" AND LOWER(l.documento) LIKE '%{busca_doc}%'"
         except ValueError: return messagebox.showerror("Erro", "Formato de data inválido.")
 
         query += " ORDER BY l.data_hora DESC"
@@ -234,7 +225,7 @@ class AppImpressoes(ctk.CTk):
 
     def limpar_filtros_relatorio(self):
         self.entrada_data_ini.delete(0, 'end'); self.entrada_data_fim.delete(0, 'end'); self.cb_rel_usuario.set("Todos"); self.cb_rel_impressora.set("Todos"); self.cb_rel_dept.set("Todos"); 
-        self.entrada_busca_doc.delete(0, 'end') # Limpa o campo de busca
+        self.entrada_busca_doc.delete(0, 'end')
         self.carregar_dados_relatorio()
 
 
@@ -242,28 +233,50 @@ class AppImpressoes(ctk.CTk):
     # ABA 3 E CENTRAL DE RELATÓRIOS
     # =========================================================
     def montar_aba_exportacao(self):
-        f_scr = ctk.CTkScrollableFrame(self.tab_exportacao, fg_color="transparent"); f_scr.pack(fill="both", expand=True, padx=10, pady=5)
+        f_scr = ctk.CTkScrollableFrame(self.tab_exportacao, fg_color="transparent")
+        f_scr.pack(fill="both", expand=True, padx=10, pady=5)
 
-        f_per = ctk.CTkFrame(f_scr); f_per.pack(fill="x", pady=(0, 10)); ctk.CTkLabel(f_per, text="1. Filtro Global (Período)", font=ctk.CTkFont(weight="bold", size=14)).pack(anchor="w", padx=15, pady=(10, 0))
+        f_per = ctk.CTkFrame(f_scr); f_per.pack(fill="x", pady=(0, 10))
+        ctk.CTkLabel(f_per, text="1. Filtro Global (Período)", font=ctk.CTkFont(weight="bold", size=14)).pack(anchor="w", padx=15, pady=(10, 0))
         f_d = ctk.CTkFrame(f_per, fg_color="transparent"); f_d.pack(pady=10)
         ctk.CTkLabel(f_d, text="Inicial:").grid(row=0, column=0, padx=5); self.pdf_data_ini = ctk.CTkEntry(f_d, width=110, placeholder_text="DD/MM/AAAA"); self.pdf_data_ini.grid(row=0, column=1, padx=5)
         ctk.CTkButton(f_d, text="📅", width=30, command=lambda: self.abrir_calendario(self.pdf_data_ini)).grid(row=0, column=2, padx=(0, 20))
         ctk.CTkLabel(f_d, text="Final:").grid(row=0, column=3, padx=5); self.pdf_data_fim = ctk.CTkEntry(f_d, width=110, placeholder_text="DD/MM/AAAA"); self.pdf_data_fim.grid(row=0, column=4, padx=5)
         ctk.CTkButton(f_d, text="📅", width=30, command=lambda: self.abrir_calendario(self.pdf_data_fim)).grid(row=0, column=5, padx=5)
 
-        f_sint = ctk.CTkFrame(f_scr); f_sint.pack(fill="x", pady=10); ctk.CTkLabel(f_sint, text="2. Relatórios de Resumo", font=ctk.CTkFont(weight="bold", size=14)).pack(anchor="w", padx=15, pady=(10, 0))
+        f_sint = ctk.CTkFrame(f_scr); f_sint.pack(fill="x", pady=10)
+        ctk.CTkLabel(f_sint, text="2. Relatórios de Resumo", font=ctk.CTkFont(weight="bold", size=14)).pack(anchor="w", padx=15, pady=(10, 0))
         f_bs = ctk.CTkFrame(f_sint, fg_color="transparent"); f_bs.pack(pady=10)
         ctk.CTkLabel(f_bs, text="Por Equipamento:").grid(row=0, column=0, padx=10, pady=5, sticky="e")
         ctk.CTkButton(f_bs, text="👁️ Visão", command=lambda: self.visualizar_central("impressoras"), fg_color="#3498DB", hover_color="#2980B9", width=120).grid(row=0, column=1, padx=5, pady=5)
         ctk.CTkButton(f_bs, text="📄 PDF", command=lambda: self.gerar_arquivo_central("impressoras", "pdf"), fg_color="#c23b22", hover_color="#8f2a18", width=120).grid(row=0, column=2, padx=5, pady=5)
         ctk.CTkButton(f_bs, text="📊 Excel", command=lambda: self.gerar_arquivo_central("impressoras", "excel"), fg_color="#1D6F42", hover_color="#144D2E", width=120).grid(row=0, column=3, padx=5, pady=5)
+        
         ctk.CTkLabel(f_bs, text="Por Utilizador:").grid(row=1, column=0, padx=10, pady=5, sticky="e")
         ctk.CTkButton(f_bs, text="👁️ Visão", command=lambda: self.visualizar_central("usuarios"), fg_color="#3498DB", hover_color="#2980B9", width=120).grid(row=1, column=1, padx=5, pady=5)
         ctk.CTkButton(f_bs, text="📄 PDF", command=lambda: self.gerar_arquivo_central("usuarios", "pdf"), fg_color="#2FA572", hover_color="#1D7850", width=120).grid(row=1, column=2, padx=5, pady=5)
         ctk.CTkButton(f_bs, text="📊 Excel", command=lambda: self.gerar_arquivo_central("usuarios", "excel"), fg_color="#1D6F42", hover_color="#144D2E", width=120).grid(row=1, column=3, padx=5, pady=5)
         ctk.CTkLabel(f_bs, text="Ordem:").grid(row=1, column=4, padx=(15, 5), pady=5); self.pdf_ordenacao = ctk.CTkOptionMenu(f_bs, values=["Maior Volume", "Ordem Alfabética"], width=130); self.pdf_ordenacao.grid(row=1, column=5, padx=5, pady=5)
 
-        f_det = ctk.CTkFrame(f_scr); f_det.pack(fill="x", pady=10); ctk.CTkLabel(f_det, text="3. Relatório Detalhado", font=ctk.CTkFont(weight="bold", size=14)).pack(anchor="w", padx=15, pady=(10, 0))
+        f_audit = ctk.CTkFrame(f_scr); f_audit.pack(fill="x", pady=10)
+        ctk.CTkLabel(f_audit, text="3. Auditoria e Desperdício", font=ctk.CTkFont(weight="bold", size=14)).pack(anchor="w", padx=15, pady=(10, 0))
+        f_fa = ctk.CTkFrame(f_audit, fg_color="transparent"); f_fa.pack(pady=5)
+        ctk.CTkLabel(f_fa, text="Departamento:").grid(row=0, column=0, padx=5, pady=5)
+        self.cb_dept_audit = ctk.CTkComboBox(f_fa, width=150, values=["Todos"]); self.cb_dept_audit.grid(row=0, column=1, padx=5, pady=5)
+        
+        f_ba = ctk.CTkFrame(f_audit, fg_color="transparent"); f_ba.pack(pady=(5, 10))
+        ctk.CTkLabel(f_ba, text="Doc. Extensos:").grid(row=0, column=0, padx=10, pady=5, sticky="e")
+        ctk.CTkButton(f_ba, text="👁️ Visão", command=lambda: self.visualizar_central("audit_extensos"), fg_color="#3498DB", hover_color="#2980B9", width=100).grid(row=0, column=1, padx=5, pady=5)
+        ctk.CTkButton(f_ba, text="📄 PDF", command=lambda: self.gerar_arquivo_central("audit_extensos", "pdf"), fg_color="#E67E22", hover_color="#D35400", width=100).grid(row=0, column=2, padx=5, pady=5)
+        ctk.CTkButton(f_ba, text="📊 Excel", command=lambda: self.gerar_arquivo_central("audit_extensos", "excel"), fg_color="#1D6F42", hover_color="#144D2E", width=100).grid(row=0, column=3, padx=5, pady=5)
+        
+        ctk.CTkLabel(f_ba, text="Duplicadas:").grid(row=1, column=0, padx=10, pady=5, sticky="e")
+        ctk.CTkButton(f_ba, text="👁️ Visão", command=lambda: self.visualizar_central("audit_duplicados"), fg_color="#3498DB", hover_color="#2980B9", width=100).grid(row=1, column=1, padx=5, pady=5)
+        ctk.CTkButton(f_ba, text="📄 PDF", command=lambda: self.gerar_arquivo_central("audit_duplicados", "pdf"), fg_color="#E67E22", hover_color="#D35400", width=100).grid(row=1, column=2, padx=5, pady=5)
+        ctk.CTkButton(f_ba, text="📊 Excel", command=lambda: self.gerar_arquivo_central("audit_duplicados", "excel"), fg_color="#1D6F42", hover_color="#144D2E", width=100).grid(row=1, column=3, padx=5, pady=5)
+
+        f_det = ctk.CTkFrame(f_scr); f_det.pack(fill="x", pady=10)
+        ctk.CTkLabel(f_det, text="4. Relatório Detalhado", font=ctk.CTkFont(weight="bold", size=14)).pack(anchor="w", padx=15, pady=(10, 0))
         f_fd = ctk.CTkFrame(f_det, fg_color="transparent"); f_fd.pack(pady=5)
         ctk.CTkLabel(f_fd, text="Dept:").grid(row=0, column=0, padx=5, pady=5); self.cb_dept = ctk.CTkComboBox(f_fd, width=150, values=["Todos"]); self.cb_dept.grid(row=0, column=1, padx=5, pady=5)
         ctk.CTkLabel(f_fd, text="Usr:").grid(row=0, column=2, padx=5, pady=5); self.cb_usuario = ctk.CTkComboBox(f_fd, width=150, values=["Todos"]); self.cb_usuario.grid(row=0, column=3, padx=5, pady=5)
@@ -274,15 +287,10 @@ class AppImpressoes(ctk.CTk):
         ctk.CTkButton(f_bd, text="📊 Exportar Excel", command=lambda: self.gerar_arquivo_central("detalhado", "excel"), fg_color="#1D6F42", hover_color="#144D2E", width=150).pack(side="left", padx=10)
 
         f_mail = ctk.CTkFrame(f_scr); f_mail.pack(fill="x", pady=(0, 10))
-        ctk.CTkLabel(f_mail, text="4. Envio de Relatório à Diretoria (Dia 01 até Hoje)", font=ctk.CTkFont(weight="bold", size=14)).pack(anchor="w", padx=15, pady=(10, 0))
+        ctk.CTkLabel(f_mail, text="5. Envio de Relatório à Diretoria (Dia 01 até Hoje)", font=ctk.CTkFont(weight="bold", size=14)).pack(anchor="w", padx=15, pady=(10, 0))
         f_btn_mail = ctk.CTkFrame(f_mail, fg_color="transparent"); f_btn_mail.pack(pady=10)
         ctk.CTkLabel(f_btn_mail, text="Envia o acumulado do mês corrente em formato PDF e Excel.").pack(side="left", padx=10)
         ctk.CTkButton(f_btn_mail, text="🚀 Enviar Relatório do Mês Agora", command=self.disparar_fecho_manual_central, fg_color="#8E44AD", hover_color="#732D91", width=240).pack(side="left", padx=10)
-
-        ctk.CTkLabel(f_scr, text="Pré-visualização", font=ctk.CTkFont(size=14, slant="italic"), text_color="gray").pack(pady=(10, 0))
-        self.frame_prev = ctk.CTkFrame(f_scr, height=220); self.frame_prev.pack(fill="both", expand=True, pady=5, padx=10); self.frame_prev.pack_propagate(False)
-        scroll_p = ttk.Scrollbar(self.frame_prev); scroll_p.pack(side="right", fill="y"); self.tree_prev = ttk.Treeview(self.frame_prev, show="headings", yscrollcommand=scroll_p.set); scroll_p.config(command=self.tree_prev.yview)
-        self.tree_prev.tag_configure('total', background="#2FA572", foreground="white"); self.tree_prev.pack(fill="both", expand=True)
 
     def obter_dados_central(self, tipo):
         d_ini, d_fim = self.pdf_data_ini.get().strip(), self.pdf_data_fim.get().strip()
@@ -290,11 +298,17 @@ class AppImpressoes(ctk.CTk):
                    FROM logs_impressao l LEFT JOIN mapeamento_terminais m ON UPPER(l.terminal) = UPPER(m.terminal) LEFT JOIN configuracao_impressoras i ON UPPER(l.impressora) = UPPER(i.nome_impressora) WHERE 1=1'''
         if d_ini: query += f" AND l.data_hora >= '{datetime.strptime(d_ini, '%d/%m/%Y').strftime('%Y-%m-%d 00:00:00')}'"
         if d_fim: query += f" AND l.data_hora <= '{datetime.strptime(d_fim, '%d/%m/%Y').strftime('%Y-%m-%d 23:59:59')}'"
+        
         if tipo == "detalhado":
             dept, usu, imp = self.cb_dept.get().strip(), self.cb_usuario.get().strip(), self.cb_impressora.get().strip()
             if dept and dept != "Todos": query += f" AND LOWER(COALESCE(m.departamento, 'Sem Setor')) = LOWER('{dept}')"
             if usu and usu != "Todos": query += f" AND LOWER(COALESCE(m.nome_real, l.usuario)) = LOWER('{usu}')"
             if imp and imp != "Todos": query += f" AND LOWER(l.impressora) = LOWER('{imp}')"
+        elif tipo in ["audit_extensos", "audit_duplicados"]:
+            dept_audit = self.cb_dept_audit.get().strip()
+            if dept_audit and dept_audit != "Todos":
+                query += f" AND LOWER(COALESCE(m.departamento, 'Sem Setor')) = LOWER('{dept_audit}')"
+
         query += " ORDER BY l.data_hora DESC"
         sessao, engine = obter_sessao(); df = pd.read_sql(query, engine); sessao.close()
         if not df.empty: df['custo_total'] = df['paginas'] * df['custo_pagina']
@@ -303,8 +317,33 @@ class AppImpressoes(ctk.CTk):
     def visualizar_central(self, tipo):
         try: df = self.obter_dados_central(tipo)
         except ValueError: return messagebox.showerror("Erro", "Data inválida.")
-        self.tree_prev.delete(*self.tree_prev.get_children()); self.tree_prev["columns"] = ()
-        if df.empty: return messagebox.showwarning("Aviso", "Sem dados.")
+        if df.empty: return messagebox.showwarning("Aviso", "Sem dados para o período ou filtros selecionados.")
+
+        janela_visao = ctk.CTkToplevel(self)
+        janela_visao.title("Pré-visualização de Dados")
+        janela_visao.geometry("1000x550")
+        janela_visao.attributes("-topmost", True)
+
+        titulos_modal = {
+            "impressoras": "🔍 Visão Geral: Custos por Equipamento",
+            "usuarios": "🔍 Visão Geral: Custos por Utilizador",
+            "audit_extensos": "🔍 Auditoria: Top Documentos Mais Extensos",
+            "audit_duplicados": "🔍 Auditoria: Top Impressões Duplicadas",
+            "detalhado": "🔍 Visão Geral: Relatório Detalhado"
+        }
+        
+        ctk.CTkLabel(janela_visao, text=titulos_modal.get(tipo, "Pré-visualização de Dados"), font=ctk.CTkFont(weight="bold", size=18)).pack(pady=15)
+        
+        frame_grid = ctk.CTkFrame(janela_visao)
+        frame_grid.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        scroll_y = ttk.Scrollbar(frame_grid)
+        scroll_y.pack(side="right", fill="y")
+        
+        self.tree_prev = ttk.Treeview(frame_grid, show="headings", yscrollcommand=scroll_y.set)
+        scroll_y.config(command=self.tree_prev.yview)
+        self.tree_prev.tag_configure('total', background="#2FA572", foreground="white")
+        self.tree_prev.pack(fill="both", expand=True)
 
         if tipo == "impressoras":
             df['imp_agr'] = df['impressora'].apply(lambda x: 'Contábil/Fiscal & Contratos' if str(x).upper() in ['CONTABIL_FISCAL', 'CONTRATOS'] else x)
@@ -313,15 +352,37 @@ class AppImpressoes(ctk.CTk):
             for c, w in zip(("Equipamento", "Páginas", "Custo"), (300, 100, 150)): self.tree_prev.heading(c, text=c); self.tree_prev.column(c, width=w, anchor="center" if c!="Equipamento" else "w")
             for _, r in resumo.iterrows(): self.tree_prev.insert("", "end", values=(r['imp_agr'], int(r['paginas']), f_moeda(r['custo_total'])))
             self.tree_prev.insert("", "end", values=("TOTAL GERAL", int(resumo['paginas'].sum()), f_moeda(resumo['custo_total'].sum())), tags=('total',))
+        
         elif tipo == "usuarios":
             resumo = df.groupby(['nome_final', 'departamento']).agg({'paginas': 'sum', 'custo_total': 'sum'}).reset_index().sort_values(by='nome_final' if self.pdf_ordenacao.get() == "Ordem Alfabética" else 'paginas', ascending=(self.pdf_ordenacao.get() == "Ordem Alfabética"))
             self.tree_prev["columns"] = ("Utilizador", "Setor", "Páginas", "Custo")
-            for c, w in zip(("Utilizador", "Setor", "Páginas", "Custo"), (200, 150, 100, 100)): self.tree_prev.heading(c, text=c); self.tree_prev.column(c, width=w, anchor="center" if c in ["Páginas", "Custo"] else "w")
+            for c, w in zip(("Utilizador", "Setor", "Páginas", "Custo"), (250, 180, 120, 150)): self.tree_prev.heading(c, text=c); self.tree_prev.column(c, width=w, anchor="center" if c in ["Páginas", "Custo"] else "w")
             for _, r in resumo.iterrows(): self.tree_prev.insert("", "end", values=(r['nome_final'], r['departamento'], int(r['paginas']), f_moeda(r['custo_total'])))
             self.tree_prev.insert("", "end", values=("TOTAL GERAL", "-", int(resumo['paginas'].sum()), f_moeda(resumo['custo_total'].sum())), tags=('total',))
+        
+        elif tipo == "audit_extensos":
+            df['paginas'] = pd.to_numeric(df['paginas'], errors='coerce').fillna(0)
+            df_filtrado = df[df['paginas'] > 1]
+            df_ex = df_filtrado.nlargest(50, 'paginas')
+            self.tree_prev["columns"] = ("Data", "Utilizador", "Páginas", "Documento")
+            for c, w in zip(("Data", "Utilizador", "Páginas", "Documento"), (120, 150, 80, 400)):
+                self.tree_prev.heading(c, text=c); self.tree_prev.column(c, width=w, anchor="center" if c!="Documento" else "w")
+            for _, r in df_ex.iterrows():
+                d_str = pd.to_datetime(r['data_hora']).strftime("%d/%m/%Y %H:%M")
+                self.tree_prev.insert("", "end", values=(d_str, r['nome_final'], int(r['paginas']), r['documento']))
+        
+        elif tipo == "audit_duplicados":
+            df_dup = df.groupby(['documento', 'nome_final']).agg(vezes=('documento', 'count'), paginas_totais=('paginas', 'sum')).reset_index()
+            df_ex = df_dup[df_dup['vezes'] > 1].sort_values(by=['vezes', 'paginas_totais'], ascending=[False, False]).head(50)
+            self.tree_prev["columns"] = ("Qtd", "Utilizador", "Total Pags", "Documento")
+            for c, w in zip(("Qtd", "Utilizador", "Total Pags", "Documento"), (80, 150, 100, 400)):
+                self.tree_prev.heading(c, text=c); self.tree_prev.column(c, width=w, anchor="center" if c!="Documento" else "w")
+            for _, r in df_ex.iterrows():
+                self.tree_prev.insert("", "end", values=(f"{int(r['vezes'])}x", r['nome_final'], int(r['paginas_totais']), r['documento']))
+        
         elif tipo == "detalhado":
             self.tree_prev["columns"] = ("Data", "Terminal", "Nome", "Setor", "Imp", "Pags", "Custo", "Doc")
-            for col, w in zip(("Data", "Terminal", "Nome", "Setor", "Imp", "Pags", "Custo", "Doc"), (120, 80, 130, 110, 90, 40, 70, 200)):
+            for col, w in zip(("Data", "Terminal", "Nome", "Setor", "Imp", "Pags", "Custo", "Doc"), (120, 90, 130, 110, 100, 50, 80, 250)):
                 self.tree_prev.heading(col, text=col.replace("Custo", "Custo (R$)")); self.tree_prev.column(col, width=w, anchor="center" if col not in ["Nome", "Doc", "Setor"] else "w")
             for _, r in df.iterrows(): self.tree_prev.insert("", "end", values=(pd.to_datetime(r['data_hora']).strftime("%d/%m/%Y %H:%M"), r['terminal'], r['nome_final'], r['departamento'], r['impressora'], r['paginas'], f_moeda(r['custo_total']), r['documento']))
             self.tree_prev.insert("", "end", values=("TOTAL GERAL", "", "", "", "", int(df['paginas'].sum()), f_moeda(df['custo_total'].sum()), ""), tags=('total',))
@@ -330,47 +391,76 @@ class AppImpressoes(ctk.CTk):
         try: df = self.obter_dados_central(tipo)
         except ValueError: return messagebox.showerror("Erro", "Data inválida.")
         if df.empty: return messagebox.showwarning("Aviso", "Sem dados.")
+        
         d_ini, d_fim = self.pdf_data_ini.get().strip(), self.pdf_data_fim.get().strip()
         str_ini, str_fim = d_ini.replace('/', '-') if d_ini else "Inicio", d_fim.replace('/', '-') if d_fim else "Hoje"
         ext = ".xlsx" if formato == "excel" else ".pdf"
         tipo_f = ("Excel", "*.xlsx") if formato == "excel" else ("PDF", "*.pdf")
+        
         if tipo == "impressoras": nome = f"Equipamentos_{str_ini}_a_{str_fim}{ext}"
         elif tipo == "usuarios": nome = f"Utilizadores_{str_ini}_a_{str_fim}{ext}"
-        else: nome = f"Auditoria_{str_ini}_a_{str_fim}{ext}"
+        elif tipo == "audit_extensos": nome = f"Auditoria_Extensos_{str_ini}_a_{str_fim}{ext}"
+        elif tipo == "audit_duplicados": nome = f"Auditoria_Duplicados_{str_ini}_a_{str_fim}{ext}"
+        else: nome = f"Relatorio_Detalhado_{str_ini}_a_{str_fim}{ext}"
+        
         caminho = filedialog.asksaveasfilename(defaultextension=ext, initialfile=nome, filetypes=[tipo_f], title=f"Guardar Relatório")
         if not caminho: return
+
+        if tipo == "audit_extensos":
+            df['paginas'] = pd.to_numeric(df['paginas'], errors='coerce').fillna(0)
+            df_filtrado = df[df['paginas'] > 1]
+            df_ex = df_filtrado.nlargest(100, 'paginas')[['data_hora', 'nome_final', 'departamento', 'paginas', 'documento']]
+            df_ex['data_hora'] = pd.to_datetime(df_ex['data_hora']).dt.strftime("%d/%m/%Y %H:%M")
+            df_ex = df_ex.rename(columns={'data_hora': 'Data', 'nome_final': 'Utilizador', 'departamento': 'Setor', 'paginas': 'Páginas', 'documento': 'Ficheiro'})
+        elif tipo == "audit_duplicados":
+            df_dup = df.groupby(['documento', 'nome_final', 'departamento']).agg(vezes=('documento', 'count'), paginas_totais=('paginas', 'sum')).reset_index()
+            df_ex = df_dup[df_dup['vezes'] > 1].sort_values(by=['vezes', 'paginas_totais'], ascending=[False, False])
+            df_ex = df_ex.rename(columns={'vezes': 'Qtd Impressões', 'nome_final': 'Utilizador', 'departamento': 'Setor', 'paginas_totais': 'Total Páginas', 'documento': 'Ficheiro'})
 
         if formato == "excel":
             try:
                 if tipo == "impressoras":
                     df['imp_agr'] = df['impressora'].apply(lambda x: 'Contábil/Fiscal & Contratos' if str(x).upper() in ['CONTABIL_FISCAL', 'CONTRATOS'] else x)
                     df_ex = df.groupby('imp_agr').agg({'paginas': 'sum', 'custo_total': 'sum'}).reset_index().sort_values(by='paginas', ascending=False)
-                    df_ex.rename(columns={'imp_agr': 'Impressora', 'paginas': 'Total Páginas', 'custo_total': 'Custo Estimado (R$)'}, inplace=True)
+                    df_ex = df_ex.rename(columns={'imp_agr': 'Impressora', 'paginas': 'Total Páginas', 'custo_total': 'Custo Estimado (R$)'})
                 elif tipo == "usuarios":
                     df_ex = df.groupby(['nome_final', 'departamento']).agg({'paginas': 'sum', 'custo_total': 'sum'}).reset_index()
-                    df_ex.rename(columns={'nome_final': 'Utilizador', 'departamento': 'Setor', 'paginas': 'Total Páginas', 'custo_total': 'Custo Estimado (R$)'}, inplace=True)
-                else:
+                    df_ex = df_ex.rename(columns={'nome_final': 'Utilizador', 'departamento': 'Setor', 'paginas': 'Total Páginas', 'custo_total': 'Custo Estimado (R$)'})
+                elif tipo == "detalhado":
                     df_ex = df.rename(columns={'data_hora': 'Data', 'terminal': 'Terminal', 'nome_final': 'Utilizador', 'departamento': 'Setor', 'impressora': 'Impressora', 'paginas': 'Páginas', 'custo_pagina': 'Custo Fixo', 'custo_total': 'Custo Acumulado', 'documento': 'Ficheiro'})
+                
                 df_ex.to_excel(caminho, index=False)
                 messagebox.showinfo("Sucesso", f"Excel guardado em:\n{caminho}")
             except Exception as e: messagebox.showerror("Erro Excel", str(e))
+            
         elif formato == "pdf":
             periodo = f"{d_ini or 'Início'} a {d_fim or 'Hoje'}"
-            info_f = "Apenas Período"
-            if tipo == "detalhado":
-                f_usados = []
-                d, u, i = self.cb_dept.get(), self.cb_usuario.get(), self.cb_impressora.get()
-                if d != "Todos": f_usados.append(f"Set: {d}")
-                if u != "Todos": f_usados.append(f"Usr: {u}")
-                if i != "Todos": f_usados.append(f"Imp: {i}")
-                if f_usados: info_f = " | ".join(f_usados)
+            
             try:
                 from relatorios import exportar_resumo_impressoras_pdf, exportar_resumo_usuarios_pdf, exportar_relatorio_detalhado_pdf
-                if tipo == "impressoras": exportar_resumo_impressoras_pdf(df, caminho, periodo)
-                elif tipo == "usuarios": exportar_resumo_usuarios_pdf(df, caminho, periodo, self.pdf_ordenacao.get())
-                else: exportar_relatorio_detalhado_pdf(df, caminho, periodo, info_f)
+                from relatorios import exportar_auditoria_extensos_pdf, exportar_auditoria_duplicados_pdf
+                
+                if tipo == "impressoras": 
+                    exportar_resumo_impressoras_pdf(df, caminho, periodo)
+                elif tipo == "usuarios": 
+                    exportar_resumo_usuarios_pdf(df, caminho, periodo, self.pdf_ordenacao.get())
+                elif tipo == "audit_extensos":
+                    exportar_auditoria_extensos_pdf(df_ex.head(40), caminho, periodo)
+                elif tipo == "audit_duplicados":
+                    exportar_auditoria_duplicados_pdf(df_ex.head(40), caminho, periodo)
+                else: 
+                    info_f = "Apenas Período"
+                    f_usados = []
+                    d, u, i = self.cb_dept.get(), self.cb_usuario.get(), self.cb_impressora.get()
+                    if d != "Todos": f_usados.append(f"Set: {d}")
+                    if u != "Todos": f_usados.append(f"Usr: {u}")
+                    if i != "Todos": f_usados.append(f"Imp: {i}")
+                    if f_usados: info_f = " | ".join(f_usados)
+                    exportar_relatorio_detalhado_pdf(df, caminho, periodo, info_f)
+                    
                 messagebox.showinfo("Sucesso", f"PDF guardado em:\n{caminho}")
-            except Exception as e: messagebox.showerror("Erro PDF", str(e))
+            except Exception as e: 
+                messagebox.showerror("Erro PDF", str(e))
 
     def disparar_fecho_manual_central(self):
         hoje = datetime.now()
@@ -404,33 +494,68 @@ class AppImpressoes(ctk.CTk):
             if not silencioso: messagebox.showwarning("Aviso", "Não há impressões no período selecionado.")
             return
 
+        # Prepara os dados matemáticos
         df['custo_total'] = df['paginas'] * df['custo_pagina']
+        df['paginas_num'] = pd.to_numeric(df['paginas'], errors='coerce').fillna(0)
 
+        # Caminhos dos ficheiros temporários a serem anexados
         temp_dir = tempfile.gettempdir()
-        pdf_path = os.path.join(temp_dir, "Resumo_Acumulado_Mes.pdf")
-        excel_path = os.path.join(temp_dir, "Auditoria_Acumulado_Mes.xlsx")
+        pdf_resumo_path = os.path.join(temp_dir, "Resumo_Financeiro_Mes.pdf")
+        pdf_extensos_path = os.path.join(temp_dir, "Auditoria_Extensos_Mes.pdf")
+        pdf_duplicados_path = os.path.join(temp_dir, "Auditoria_Duplicados_Mes.pdf")
+        excel_path = os.path.join(temp_dir, "Base_Dados_Completa.xlsx")
+        
         periodo = f"{d_ini} a {d_fim}"
 
-        from relatorios import exportar_resumo_impressoras_pdf
+        # Importa os geradores do relatorios.py
+        from relatorios import exportar_resumo_impressoras_pdf, exportar_auditoria_extensos_pdf, exportar_auditoria_duplicados_pdf
         
+        # 1. GERAR PDF RESUMO DE IMPRESSORAS
         df_imp = df.copy()
         def unificar_imp(nome):
             if str(nome).strip().upper() in ['CONTABIL_FISCAL', 'CONTRATOS']: return 'Contábil/Fiscal & Contratos'
             return nome
         df_imp['impressora'] = df_imp['impressora'].apply(unificar_imp)
-        
-        exportar_resumo_impressoras_pdf(df_imp, pdf_path, periodo)
+        exportar_resumo_impressoras_pdf(df_imp, pdf_resumo_path, periodo)
 
+        # 2. GERAR PDF AUDITORIA DE DOCUMENTOS EXTENSOS (Top 40)
+        df_filtrado_ext = df[df['paginas_num'] > 1]
+        df_ex_ext = df_filtrado_ext.nlargest(40, 'paginas_num')[['data_hora', 'nome_final', 'departamento', 'paginas_num', 'documento']]
+        df_ex_ext['data_hora'] = pd.to_datetime(df_ex_ext['data_hora']).dt.strftime("%d/%m/%Y %H:%M")
+        df_ex_ext = df_ex_ext.rename(columns={'data_hora': 'Data', 'nome_final': 'Utilizador', 'departamento': 'Setor', 'paginas_num': 'Páginas', 'documento': 'Ficheiro'})
+        exportar_auditoria_extensos_pdf(df_ex_ext, pdf_extensos_path, periodo)
+
+        # 3. GERAR PDF AUDITORIA DE IMPRESSÕES DUPLICADAS (Top 40)
+        df_dup = df.groupby(['documento', 'nome_final', 'departamento']).agg(vezes=('documento', 'count'), paginas_totais=('paginas_num', 'sum')).reset_index()
+        df_ex_dup = df_dup[df_dup['vezes'] > 1].sort_values(by=['vezes', 'paginas_totais'], ascending=[False, False]).head(40)
+        df_ex_dup = df_ex_dup.rename(columns={'vezes': 'Qtd Impressões', 'nome_final': 'Utilizador', 'departamento': 'Setor', 'paginas_totais': 'Total Páginas', 'documento': 'Ficheiro'})
+        exportar_auditoria_duplicados_pdf(df_ex_dup, pdf_duplicados_path, periodo)
+
+        # 4. GERAR EXCEL COMPLETO
         df_ex = df.rename(columns={'data_hora': 'Data', 'terminal': 'Terminal', 'nome_final': 'Utilizador', 'departamento': 'Setor', 'impressora': 'Impressora', 'paginas': 'Páginas', 'custo_pagina': 'Custo Fixo', 'custo_total': 'Custo Estimado', 'documento': 'Ficheiro'})
+        if 'paginas_num' in df_ex.columns:
+            df_ex = df_ex.drop(columns=['paginas_num'])
         df_ex.to_excel(excel_path, index=False)
 
+        # CONFIGURAR E-MAIL
         msg = MIMEMultipart()
-        msg['From'], msg['To'], msg['Subject'] = rem, dest, f"Relatório de Impressões Acumulado - {periodo}"
+        msg['From'], msg['To'], msg['Subject'] = rem, dest, f"Relatório de Impressões e Auditoria - {periodo}"
         
-        corpo = f"Olá,\n\nSegue em anexo o relatório de impressões da Viman Contabilidade referente ao período de {periodo}.\n\n- Total de Páginas Impressas: {int(df['paginas'].sum())}\n- Custo Estimado Total: {f_moeda(df['custo_total'].sum())}\n\nAtenciosamente,\nSistema de Auditoria Interna."
+        corpo = f"Olá,\n\nSegue em anexo o pacote de relatórios de impressões da Viman Contabilidade referente ao período de {periodo}.\n\n"
+        corpo += f"► Total de Páginas Impressas: {int(df['paginas_num'].sum())}\n"
+        corpo += f"► Custo Estimado Total: {f_moeda(df['custo_total'].sum())}\n\n"
+        corpo += "Ficheiros em anexo:\n"
+        corpo += "- Resumo_Financeiro_Mes.pdf (Consumo por Equipamento)\n"
+        corpo += "- Auditoria_Extensos_Mes.pdf (Documentos com mais páginas)\n"
+        corpo += "- Auditoria_Duplicados_Mes.pdf (Detecção de Desperdício)\n"
+        corpo += "- Base_Dados_Completa.xlsx (Registos Detalhados)\n\n"
+        corpo += "Atenciosamente,\nSistema de Auditoria Interna."
+        
         msg.attach(MIMEText(corpo, 'plain'))
 
-        for f_path in [pdf_path, excel_path]:
+        # ANEXAR TODOS OS 4 FICHEIROS
+        lista_anexos = [pdf_resumo_path, pdf_extensos_path, pdf_duplicados_path, excel_path]
+        for f_path in lista_anexos:
             with open(f_path, "rb") as attachment:
                 part = MIMEBase("application", "octet-stream")
                 part.set_payload(attachment.read())
@@ -438,6 +563,7 @@ class AppImpressoes(ctk.CTk):
             part.add_header("Content-Disposition", f"attachment; filename= {os.path.basename(f_path)}")
             msg.attach(part)
 
+        # ENVIO
         if serv_manual:
             servidor = serv_manual
         else:
@@ -454,11 +580,8 @@ class AppImpressoes(ctk.CTk):
         server.quit()
 
         if not silencioso:
-            messagebox.showinfo("Sucesso", "O relatório acumulado foi enviado à diretoria com sucesso!")
+            messagebox.showinfo("Sucesso", "O pacote completo de relatórios e auditoria foi enviado à diretoria com sucesso!")
 
-    # =========================================================
-    # JANELA DE CONFIGURAÇÕES GLOBAIS (CAMINHO CSV E SMTP)
-    # =========================================================
     def abrir_janela_configuracoes(self):
         jan = ctk.CTkToplevel(self)
         jan.title("Configurações do Sistema")
@@ -560,9 +683,6 @@ class AppImpressoes(ctk.CTk):
 
         ctk.CTkButton(f_scr, text="💾 Salvar Configurações", command=salvar_configuracoes, fg_color="#2FA572", hover_color="#1D7850", width=280, height=45).pack(pady=20)
 
-    # =========================================================
-    # JANELA DE CADASTROS (CUSTOS E DEPARTAMENTOS)
-    # =========================================================
     def abrir_janela_custos(self):
         jan = ctk.CTkToplevel(self); jan.title("Custos de Impressão"); jan.geometry("500x500"); jan.attributes("-topmost", True); jan.grab_set() 
         ctk.CTkLabel(jan, text="Definir Valor (R$) por Página", font=ctk.CTkFont(weight="bold", size=16)).pack(pady=15)
