@@ -25,7 +25,8 @@ def exportar_resumo_impressoras_pdf(df: pd.DataFrame, caminho: str, periodo: str
     for _, r in resumo.iterrows(): dados.append([r['impressora_agrupada'], str(int(r['paginas'])), f_moeda(r['custo_total'])])
     dados.append(['TOTAL GERAL', str(int(total_pags)), f_moeda(total_custo)])
 
-    tabela = Table(dados, colWidths=[250, 100, 120])
+    # repeatRows=1 repete o cabeçalho em novas páginas
+    tabela = Table(dados, colWidths=[250, 100, 120], repeatRows=1) 
     tabela.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0052cc")), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -48,7 +49,7 @@ def exportar_resumo_usuarios_pdf(df: pd.DataFrame, caminho: str, periodo: str, o
     for _, r in resumo.iterrows(): dados.append([r['nome_final'], r['departamento'], str(int(r['paginas'])), f_moeda(r['custo_total'])])
     dados.append(['TOTAL GERAL', '-', str(int(total_pags)), f_moeda(total_custo)])
 
-    tabela = Table(dados, colWidths=[180, 160, 60, 100])
+    tabela = Table(dados, colWidths=[180, 160, 60, 100], repeatRows=1)
     tabela.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0052cc")), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('ALIGN', (0, 1), (1, -2), 'LEFT'), ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -74,7 +75,7 @@ def exportar_relatorio_detalhado_pdf(df: pd.DataFrame, caminho: str, periodo: st
 
     dados.append(['TOTAL GERAL DO PERÍODO', '', '', '', '', str(int(total_pags)), f_moeda(total_custo), ''])
 
-    tabela = Table(dados, colWidths=[80, 65, 110, 100, 80, 30, 50, 260])
+    tabela = Table(dados, colWidths=[80, 65, 110, 100, 80, 30, 50, 260], repeatRows=1)
     tabela.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0052cc")), ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('FONTSIZE', (0, 0), (-1, 0), 8), ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
@@ -101,7 +102,7 @@ def exportar_auditoria_extensos_pdf(df, caminho, periodo):
         doc_text = Paragraph(str(r['Ficheiro']), estilo_normal)
         dados.append([str(r['Data']), str(r['Utilizador']), str(r['Setor']), str(r['Páginas']), doc_text])
 
-    tabela = Table(dados, colWidths=[90, 110, 110, 50, 420])
+    tabela = Table(dados, colWidths=[90, 110, 110, 50, 420], repeatRows=1)
     tabela.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#2FA572")),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -132,7 +133,7 @@ def exportar_auditoria_duplicados_pdf(df, caminho, periodo):
         doc_text = Paragraph(str(r['Ficheiro']), estilo_normal)
         dados.append([str(r['Qtd Impressões']), str(r['Utilizador']), str(r['Setor']), str(r['Total Páginas']), doc_text])
 
-    tabela = Table(dados, colWidths=[60, 120, 120, 80, 400])
+    tabela = Table(dados, colWidths=[60, 120, 120, 80, 400], repeatRows=1)
     tabela.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#E74C3C")), 
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),

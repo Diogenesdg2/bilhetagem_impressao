@@ -494,11 +494,9 @@ class AppImpressoes(ctk.CTk):
             if not silencioso: messagebox.showwarning("Aviso", "Não há impressões no período selecionado.")
             return
 
-        # Prepara os dados matemáticos
         df['custo_total'] = df['paginas'] * df['custo_pagina']
         df['paginas_num'] = pd.to_numeric(df['paginas'], errors='coerce').fillna(0)
 
-        # Caminhos dos ficheiros temporários a serem anexados
         temp_dir = tempfile.gettempdir()
         pdf_resumo_path = os.path.join(temp_dir, "Resumo_Financeiro_Mes.pdf")
         pdf_extensos_path = os.path.join(temp_dir, "Auditoria_Extensos_Mes.pdf")
@@ -507,10 +505,8 @@ class AppImpressoes(ctk.CTk):
         
         periodo = f"{d_ini} a {d_fim}"
 
-        # Importa os geradores do relatorios.py
         from relatorios import exportar_resumo_impressoras_pdf, exportar_auditoria_extensos_pdf, exportar_auditoria_duplicados_pdf
         
-        # 1. GERAR PDF RESUMO DE IMPRESSORAS
         df_imp = df.copy()
         def unificar_imp(nome):
             if str(nome).strip().upper() in ['CONTABIL_FISCAL', 'CONTRATOS']: return 'Contábil/Fiscal & Contratos'
@@ -518,42 +514,66 @@ class AppImpressoes(ctk.CTk):
         df_imp['impressora'] = df_imp['impressora'].apply(unificar_imp)
         exportar_resumo_impressoras_pdf(df_imp, pdf_resumo_path, periodo)
 
-        # 2. GERAR PDF AUDITORIA DE DOCUMENTOS EXTENSOS (Top 40)
         df_filtrado_ext = df[df['paginas_num'] > 1]
         df_ex_ext = df_filtrado_ext.nlargest(40, 'paginas_num')[['data_hora', 'nome_final', 'departamento', 'paginas_num', 'documento']]
         df_ex_ext['data_hora'] = pd.to_datetime(df_ex_ext['data_hora']).dt.strftime("%d/%m/%Y %H:%M")
         df_ex_ext = df_ex_ext.rename(columns={'data_hora': 'Data', 'nome_final': 'Utilizador', 'departamento': 'Setor', 'paginas_num': 'Páginas', 'documento': 'Ficheiro'})
         exportar_auditoria_extensos_pdf(df_ex_ext, pdf_extensos_path, periodo)
 
-        # 3. GERAR PDF AUDITORIA DE IMPRESSÕES DUPLICADAS (Top 40)
         df_dup = df.groupby(['documento', 'nome_final', 'departamento']).agg(vezes=('documento', 'count'), paginas_totais=('paginas_num', 'sum')).reset_index()
         df_ex_dup = df_dup[df_dup['vezes'] > 1].sort_values(by=['vezes', 'paginas_totais'], ascending=[False, False]).head(40)
         df_ex_dup = df_ex_dup.rename(columns={'vezes': 'Qtd Impressões', 'nome_final': 'Utilizador', 'departamento': 'Setor', 'paginas_totais': 'Total Páginas', 'documento': 'Ficheiro'})
         exportar_auditoria_duplicados_pdf(df_ex_dup, pdf_duplicados_path, periodo)
 
-        # 4. GERAR EXCEL COMPLETO
         df_ex = df.rename(columns={'data_hora': 'Data', 'terminal': 'Terminal', 'nome_final': 'Utilizador', 'departamento': 'Setor', 'impressora': 'Impressora', 'paginas': 'Páginas', 'custo_pagina': 'Custo Fixo', 'custo_total': 'Custo Estimado', 'documento': 'Ficheiro'})
         if 'paginas_num' in df_ex.columns:
             df_ex = df_ex.drop(columns=['paginas_num'])
         df_ex.to_excel(excel_path, index=False)
 
-        # CONFIGURAR E-MAIL
+        # -------------------------------------------------------------
+        # SISTEMA DE TEMPLATE EXTERNO (GERIDO VIA INTERFACE)
+        # -------------------------------------------------------------
+        caminho_template = "template_email.txt"
+        texto_padrao = """Olá,
+
+Segue em anexo o pacote de relatórios de impressões da Viman Contabilidade referente ao período de {periodo}.
+
+► Total de Páginas Impressas: {total_pags}
+► Custo Estimado Total: {custo_total}
+
+Ficheiros em anexo:
+- Resumo_Financeiro_Mes.pdf (Consumo por Equipamento)
+- Auditoria_Extensos_Mes.pdf (Documentos com mais páginas)
+- Auditoria_Duplicados_Mes.pdf (Detecção de Desperdício)
+- Base_Dados_Completa.xlsx (Registos Detalhados)
+
+Atenciosamente,
+Sistema de Auditoria Interna - Viman Contabilidade"""
+
+        if not os.path.exists(caminho_template):
+            try:
+                with open(caminho_template, "w", encoding="utf-8") as f:
+                    f.write(texto_padrao)
+            except Exception: pass
+
+        try:
+            with open(caminho_template, "r", encoding="utf-8") as f:
+                corpo_template = f.read()
+        except Exception:
+            corpo_template = texto_padrao 
+
+        total_pags_str = str(int(df['paginas_num'].sum()))
+        custo_total_str = f_moeda(df['custo_total'].sum())
+        
+        corpo = corpo_template.replace("{periodo}", periodo)\
+                              .replace("{total_pags}", total_pags_str)\
+                              .replace("{custo_total}", custo_total_str)
+        # -------------------------------------------------------------
+
         msg = MIMEMultipart()
         msg['From'], msg['To'], msg['Subject'] = rem, dest, f"Relatório de Impressões e Auditoria - {periodo}"
-        
-        corpo = f"Olá,\n\nSegue em anexo o pacote de relatórios de impressões da Viman Contabilidade referente ao período de {periodo}.\n\n"
-        corpo += f"► Total de Páginas Impressas: {int(df['paginas_num'].sum())}\n"
-        corpo += f"► Custo Estimado Total: {f_moeda(df['custo_total'].sum())}\n\n"
-        corpo += "Ficheiros em anexo:\n"
-        corpo += "- Resumo_Financeiro_Mes.pdf (Consumo por Equipamento)\n"
-        corpo += "- Auditoria_Extensos_Mes.pdf (Documentos com mais páginas)\n"
-        corpo += "- Auditoria_Duplicados_Mes.pdf (Detecção de Desperdício)\n"
-        corpo += "- Base_Dados_Completa.xlsx (Registos Detalhados)\n\n"
-        corpo += "Atenciosamente,\nSistema de Auditoria Interna."
-        
         msg.attach(MIMEText(corpo, 'plain'))
 
-        # ANEXAR TODOS OS 4 FICHEIROS
         lista_anexos = [pdf_resumo_path, pdf_extensos_path, pdf_duplicados_path, excel_path]
         for f_path in lista_anexos:
             with open(f_path, "rb") as attachment:
@@ -563,7 +583,6 @@ class AppImpressoes(ctk.CTk):
             part.add_header("Content-Disposition", f"attachment; filename= {os.path.basename(f_path)}")
             msg.attach(part)
 
-        # ENVIO
         if serv_manual:
             servidor = serv_manual
         else:
@@ -582,10 +601,13 @@ class AppImpressoes(ctk.CTk):
         if not silencioso:
             messagebox.showinfo("Sucesso", "O pacote completo de relatórios e auditoria foi enviado à diretoria com sucesso!")
 
+    # =========================================================
+    # JANELA DE CONFIGURAÇÕES GLOBAIS (CAMINHO CSV E SMTP)
+    # =========================================================
     def abrir_janela_configuracoes(self):
         jan = ctk.CTkToplevel(self)
         jan.title("Configurações do Sistema")
-        jan.geometry("560x650")
+        jan.geometry("560x680")
         jan.attributes("-topmost", True)
         jan.grab_set()
 
@@ -681,8 +703,56 @@ class AppImpressoes(ctk.CTk):
             messagebox.showinfo("Sucesso", "Configurações globais guardadas com sucesso!")
             jan.destroy()
 
-        ctk.CTkButton(f_scr, text="💾 Salvar Configurações", command=salvar_configuracoes, fg_color="#2FA572", hover_color="#1D7850", width=280, height=45).pack(pady=20)
+        ctk.CTkButton(f_scr, text="💾 Salvar Configurações", command=salvar_configuracoes, fg_color="#2FA572", hover_color="#1D7850", width=280, height=45).pack(pady=15)
+        
+        # --- NOVO BOTÃO PARA ABRIR O EDITOR DE TEXTO DA MENSAGEM DO E-MAIL ---
+        ctk.CTkButton(f_scr, text="📝 Editar Mensagem do E-mail", command=self.abrir_janela_template_email, fg_color="#F39C12", hover_color="#D68910", width=280, height=40).pack(pady=(0, 20))
 
+    # =========================================================
+    # NOVO: EDITOR DE TEXTO PARA A MENSAGEM DO E-MAIL
+    # =========================================================
+    def abrir_janela_template_email(self):
+        jan_temp = ctk.CTkToplevel(self)
+        jan_temp.title("Editar Mensagem Automática")
+        jan_temp.geometry("600x550")
+        jan_temp.attributes("-topmost", True)
+        jan_temp.grab_set()
+
+        ctk.CTkLabel(jan_temp, text="Template do Corpo do E-mail", font=ctk.CTkFont(weight="bold", size=16)).pack(pady=(20, 5))
+        ctk.CTkLabel(jan_temp, text="Pode usar as variáveis {periodo}, {total_pags} e {custo_total} no seu texto.", font=ctk.CTkFont(slant="italic", size=12)).pack(pady=(0, 10))
+
+        txt_template = ctk.CTkTextbox(jan_temp, width=550, height=350, font=ctk.CTkFont(size=14))
+        txt_template.pack(padx=20, pady=10)
+
+        caminho_template = "template_email.txt"
+        texto_padrao = "Olá,\n\nSegue em anexo o pacote de relatórios de impressões da Viman Contabilidade referente ao período de {periodo}.\n\n► Total de Páginas Impressas: {total_pags}\n► Custo Estimado Total: {custo_total}\n\nFicheiros em anexo:\n- Resumo_Financeiro_Mes.pdf (Consumo por Equipamento)\n- Auditoria_Extensos_Mes.pdf (Documentos com mais páginas)\n- Auditoria_Duplicados_Mes.pdf (Detecção de Desperdício)\n- Base_Dados_Completa.xlsx (Registos Detalhados)\n\nAtenciosamente,\nSistema de Auditoria Interna - Viman Contabilidade"
+
+        if os.path.exists(caminho_template):
+            try:
+                with open(caminho_template, "r", encoding="utf-8") as f:
+                    conteudo = f.read()
+            except Exception:
+                conteudo = texto_padrao
+        else:
+            conteudo = texto_padrao
+
+        txt_template.insert("1.0", conteudo)
+
+        def salvar_template():
+            novo_texto = txt_template.get("1.0", "end-1c")
+            try:
+                with open(caminho_template, "w", encoding="utf-8") as f:
+                    f.write(novo_texto)
+                messagebox.showinfo("Sucesso", "Mensagem de e-mail atualizada e gravada com sucesso!")
+                jan_temp.destroy()
+            except Exception as e:
+                messagebox.showerror("Erro", f"Não foi possível salvar o template:\n{e}")
+
+        ctk.CTkButton(jan_temp, text="💾 Salvar Mensagem", command=salvar_template, fg_color="#2FA572", hover_color="#1D7850", width=220, height=45).pack(pady=10)
+
+    # =========================================================
+    # JANELA DE CADASTROS (CUSTOS E DEPARTAMENTOS)
+    # =========================================================
     def abrir_janela_custos(self):
         jan = ctk.CTkToplevel(self); jan.title("Custos de Impressão"); jan.geometry("500x500"); jan.attributes("-topmost", True); jan.grab_set() 
         ctk.CTkLabel(jan, text="Definir Valor (R$) por Página", font=ctk.CTkFont(weight="bold", size=16)).pack(pady=15)
