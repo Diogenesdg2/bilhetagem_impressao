@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, ttk, Menu
 import pandas as pd
 from datetime import datetime, timedelta
 from tkcalendar import Calendar
@@ -13,7 +13,7 @@ from email import encoders
 import tempfile
 import os
 
-from db import obter_sessao, MapeamentoTerminal, ConfiguracaoImpressora, ConfiguracaoSistema, HistoricoEnvio
+from db import obter_sessao, MapeamentoTerminal, ConfiguracaoImpressora, ConfiguracaoSistema, HistoricoEnvio, RegraClassificacao
 from etl import processar_csv_para_banco
 from dashboard import DashboardFrame
 
@@ -38,6 +38,7 @@ class AppImpressoes(ctk.CTk):
         ctk.CTkButton(self.frame_toolbar, text="Setores e Vínculos 👤", command=self.abrir_janela_mapeamento, fg_color="#0052cc", hover_color="#003d99", width=170).pack(side="left", padx=10)
         ctk.CTkButton(self.frame_toolbar, text="Custos de Impressão 🖨️", command=self.abrir_janela_custos, fg_color="#E67E22", hover_color="#D35400", width=180).pack(side="left", padx=(0, 10))
         
+        ctk.CTkButton(self.frame_toolbar, text="🏷️ Mapa de Processos", command=self.abrir_janela_regras, fg_color="#F1C40F", hover_color="#D4AC0D", text_color="black", width=170).pack(side="left", padx=(0, 10))
         ctk.CTkButton(self.frame_toolbar, text="⚙️ Configurações", command=self.abrir_janela_configuracoes, fg_color="#8E44AD", hover_color="#732D91", width=160).pack(side="left")
 
         self.titulos_originais_rel = {"Data": "Data", "Term": "Terminal", "Nome": "Nome", "Setor": "Departamento", "Imp": "Imp", "Pags": "Pags", "Custo": "Custo (R$)", "Doc": "Doc"}
@@ -51,11 +52,165 @@ class AppImpressoes(ctk.CTk):
         
         self.visao_dashboard = DashboardFrame(self.tab_dashboard); self.visao_dashboard.pack(fill="both", expand=True)
         
+        self.verificar_regras_padrao()
+        
         self.montar_aba_relatorio()
         self.montar_aba_exportacao()
         self.carregar_valores_comboboxes() 
         self.visao_dashboard.gerar_graficos()
         self.carregar_dados_relatorio()
+
+    def verificar_regras_padrao(self):
+        sessao, engine = obter_sessao()
+        try:
+            from db import Base
+            Base.metadata.create_all(engine)
+            
+            if sessao.query(RegraClassificacao).count() == 0:
+                regras_padrao = [
+                    ("Contabilidade", "Pasta", "\\telecont\\"), ("Contabilidade", "Pasta", "/telecont/"),
+                    ("Departamento Pessoal", "Pasta", "\\folha\\"), ("Departamento Pessoal", "Pasta", "/folha/"),
+                    ("Fiscal", "Pasta", "\\efiscal\\"), ("Fiscal", "Pasta", "/efiscal/")
+                ]
+                
+                for p in ['balanço', 'comprovante', 'balanco', 'balancete', 'balancetes','balancette', 'contábil', 'contabil', 'contabilidade', 'apolice', 'apólice', 'apolices', 'apólices', 'estoque', 'extrato', 'mútuo']:
+                    regras_padrao.append(("Contabilidade", "Palavra-chave", p))
+                
+                for p in ['aso de', 'retenção', 'retencao', 'retenções', 'retencoes', 'férias', 'ferias', 'rescisão', 'rescisao', 'pro-rural', 'base de cálculo', 'folha de pagto', 'folha de pagamento', 'fgts', 'holerite', 'holerith', 'holerites', 'trabalhado', 'ficha de registro', 'listfunccompleta', 'esocial']:
+                    regras_padrao.append(("Departamento Pessoal", "Palavra-chave", p))
+                
+                for p in ['pis', 'cofins', 'irpj', 'csll', 'darf', 'das', 'simples nacional']: regras_padrao.append(("Fiscal", "Palavra-chave", p))
+                regras_padrao.append(("Guias", "Palavra-chave", "guia"))
+                
+                for p in ['itau', 'itaú', 'sicoob', 'sicredi', 'sicreed', 'banco do brasil', 'btg', 'bradesco', 'santander', 'caixa']: regras_padrao.append(("Bancos", "Palavra-chave", p))
+                for p in ['nota', 'nfe', 'nf-e']: regras_padrao.append(("Notas", "Palavra-chave", p))
+                for p in ['relatorio', 'relatório']: regras_padrao.append(("Relatórios", "Palavra-chave", p))
+                
+                regras_padrao.extend([("Planilhas", "Extensão", ".xls"), ("Arquivos de Texto", "Extensão", ".txt"), ("Arquivos PDF", "Extensão", ".pdf")])
+
+                for cat, tipo, val in regras_padrao:
+                    sessao.add(RegraClassificacao(categoria=cat, tipo_regra=tipo, valor=val))
+                sessao.commit()
+        except Exception as e:
+            print(f"Aviso de migração de regras: {e}")
+        finally:
+            sessao.close()
+
+    def abrir_janela_regras(self, pre_fill_valor=""):
+        jan = ctk.CTkToplevel(self)
+        jan.title("Regras do Mapa de Processos")
+        jan.geometry("750x600")
+        jan.attributes("-topmost", True)
+        jan.grab_set() 
+
+        ctk.CTkLabel(jan, text="Configuração Dinâmica do Mapa de Processos", font=ctk.CTkFont(weight="bold", size=16)).pack(pady=15)
+        
+        f = ctk.CTkFrame(jan, fg_color="transparent")
+        f.pack(fill="x", padx=20)
+        
+        # Carrega as categorias dinâmicas da base de dados
+        sessao, _ = obter_sessao()
+        try:
+            cats_db = [r[0] for r in sessao.query(RegraClassificacao.categoria).distinct().all()]
+            todas_cats = sorted(list(set(["Contabilidade", "Departamento Pessoal", "Fiscal", "Guias", "Bancos", "Notas", "Relatórios", "Planilhas", "Arquivos de Texto", "Arquivos PDF", "Outros"] + cats_db)))
+        except Exception:
+            todas_cats = ["Contabilidade", "Departamento Pessoal", "Fiscal", "Guias", "Bancos", "Notas", "Relatórios", "Planilhas", "Arquivos de Texto", "Arquivos PDF", "Outros"]
+        finally:
+            sessao.close()
+            
+        ctk.CTkLabel(f, text="Categoria (Escolha ou Digite nova):").grid(row=0, column=0, sticky="w", pady=2)
+        cb_cat = ctk.CTkComboBox(f, width=220, values=todas_cats)
+        cb_cat.grid(row=1, column=0, sticky="w", pady=5, padx=(0, 10))
+        
+        ctk.CTkLabel(f, text="Tipo de Regra:").grid(row=0, column=1, sticky="w", pady=2)
+        cb_tipo = ctk.CTkComboBox(f, width=150, values=["Pasta", "Palavra-chave", "Extensão"])
+        cb_tipo.grid(row=1, column=1, sticky="w", pady=5, padx=(0, 10))
+        
+        ctk.CTkLabel(f, text="Valor (Ex: rescisao ou .pdf):").grid(row=0, column=2, sticky="w", pady=2)
+        e_val = ctk.CTkEntry(f, width=220)
+        e_val.grid(row=1, column=2, sticky="w", pady=5)
+
+        if pre_fill_valor:
+            e_val.insert(0, pre_fill_valor.lower())
+            cb_tipo.set("Palavra-chave")
+
+        def load():
+            for i in tree.get_children(): tree.delete(i)
+            s, _ = obter_sessao()
+            try:
+                for r in s.query(RegraClassificacao).order_by(RegraClassificacao.tipo_regra, RegraClassificacao.categoria).all():
+                    tree.insert("", "end", iid=r.id, values=(r.categoria, r.tipo_regra, r.valor))
+            except Exception: pass
+            finally: s.close()
+
+        def save():
+            c, t, v = cb_cat.get().strip(), cb_tipo.get().strip(), e_val.get().strip().lower()
+            if not c or not t or not v: return messagebox.showwarning("Aviso", "Preencha todos os campos!")
+            s, _ = obter_sessao()
+            regra_existente = s.query(RegraClassificacao).filter_by(categoria=c, tipo_regra=t, valor=v).first()
+            if not regra_existente:
+                s.add(RegraClassificacao(categoria=c, tipo_regra=t, valor=v))
+                s.commit()
+            s.close()
+            e_val.delete(0, 'end'); load(); self.visao_dashboard.gerar_graficos()
+            
+            # Atualiza lista na hora se for uma categoria nova
+            if c not in cb_cat.cget("values"):
+                novos_valores = list(cb_cat.cget("values")) + [c]
+                cb_cat.configure(values=sorted(novos_valores))
+
+        def edit():
+            sel = tree.selection()
+            if not sel: return messagebox.showwarning("Aviso", "Selecione uma regra na tabela primeiro!")
+            c, t, v = cb_cat.get().strip(), cb_tipo.get().strip(), e_val.get().strip().lower()
+            if not c or not t or not v: return messagebox.showwarning("Aviso", "Preencha todos os campos!")
+            
+            s, _ = obter_sessao()
+            reg = s.query(RegraClassificacao).filter_by(id=sel[0]).first()
+            if reg:
+                reg.categoria = c
+                reg.tipo_regra = t
+                reg.valor = v
+                s.commit()
+            s.close(); load(); self.visao_dashboard.gerar_graficos()
+            
+            if c not in cb_cat.cget("values"):
+                novos_valores = list(cb_cat.cget("values")) + [c]
+                cb_cat.configure(values=sorted(novos_valores))
+
+        def delete():
+            sel = tree.selection()
+            if not sel: return
+            s, _ = obter_sessao()
+            reg = s.query(RegraClassificacao).filter_by(id=sel[0]).first()
+            if reg: s.delete(reg); s.commit()
+            s.close(); load(); self.visao_dashboard.gerar_graficos()
+
+        fb = ctk.CTkFrame(jan, fg_color="transparent"); fb.pack(fill="x", padx=20, pady=10)
+        ctk.CTkButton(fb, text="➕ Adicionar", command=save, width=130, fg_color="#2FA572", hover_color="#1D7850").pack(side="left", padx=5)
+        ctk.CTkButton(fb, text="✏️ Guardar Edição", command=edit, width=140, fg_color="#F39C12", hover_color="#D68910").pack(side="left", padx=5)
+        ctk.CTkButton(fb, text="🗑️ Remover", command=delete, width=130, fg_color="#c23b22", hover_color="#8f2a18").pack(side="left", padx=5)
+        
+        ttk.Style(jan).configure("Treeview", borderwidth=0)
+        scroll_y = ttk.Scrollbar(jan)
+        scroll_y.pack(side="right", fill="y", pady=(0, 10))
+        
+        tree = ttk.Treeview(jan, columns=("C", "T", "V"), show="headings", height=15, yscrollcommand=scroll_y.set)
+        scroll_y.config(command=tree.yview)
+        for col, w in zip(("C", "T", "V"), (200, 150, 300)): tree.heading(col, text={"C":"Categoria", "T":"Tipo", "V":"Valor"}[col]); tree.column(col, width=w)
+        tree.pack(fill="both", expand=True, padx=(20, 0), pady=(0, 10))
+        
+        def ao_selecionar(event):
+            sel = tree.selection()
+            if sel:
+                val = tree.item(sel[0], 'values')
+                cb_cat.set(val[0])
+                cb_tipo.set(val[1])
+                e_val.delete(0, 'end')
+                e_val.insert(0, val[2])
+        tree.bind("<<TreeviewSelect>>", ao_selecionar)
+        
+        load()
 
     def pesquisar_nos_registros(self, nome_documento):
         self.tabview_principal.set("📄 Registos Detalhados")
@@ -530,25 +685,8 @@ class AppImpressoes(ctk.CTk):
             df_ex = df_ex.drop(columns=['paginas_num'])
         df_ex.to_excel(excel_path, index=False)
 
-        # -------------------------------------------------------------
-        # SISTEMA DE TEMPLATE EXTERNO (GERIDO VIA INTERFACE)
-        # -------------------------------------------------------------
         caminho_template = "template_email.txt"
-        texto_padrao = """Olá,
-
-Segue em anexo o pacote de relatórios de impressões da Viman Contabilidade referente ao período de {periodo}.
-
-► Total de Páginas Impressas: {total_pags}
-► Custo Estimado Total: {custo_total}
-
-Ficheiros em anexo:
-- Resumo_Financeiro_Mes.pdf (Consumo por Equipamento)
-- Auditoria_Extensos_Mes.pdf (Documentos com mais páginas)
-- Auditoria_Duplicados_Mes.pdf (Detecção de Desperdício)
-- Base_Dados_Completa.xlsx (Registos Detalhados)
-
-Atenciosamente,
-Sistema de Auditoria Interna - Viman Contabilidade"""
+        texto_padrao = "Olá,\n\nSegue em anexo o pacote de relatórios de impressões da Viman Contabilidade referente ao período de {periodo}.\n\n► Total de Páginas Impressas: {total_pags}\n► Custo Estimado Total: {custo_total}\n\nFicheiros em anexo:\n- Resumo_Financeiro_Mes.pdf (Consumo por Equipamento)\n- Auditoria_Extensos_Mes.pdf (Documentos com mais páginas)\n- Auditoria_Duplicados_Mes.pdf (Detecção de Desperdício)\n- Base_Dados_Completa.xlsx (Registos Detalhados)\n\nAtenciosamente,\nSistema de Auditoria Interna - Viman Contabilidade"
 
         if not os.path.exists(caminho_template):
             try:
@@ -568,7 +706,6 @@ Sistema de Auditoria Interna - Viman Contabilidade"""
         corpo = corpo_template.replace("{periodo}", periodo)\
                               .replace("{total_pags}", total_pags_str)\
                               .replace("{custo_total}", custo_total_str)
-        # -------------------------------------------------------------
 
         msg = MIMEMultipart()
         msg['From'], msg['To'], msg['Subject'] = rem, dest, f"Relatório de Impressões e Auditoria - {periodo}"
@@ -601,9 +738,6 @@ Sistema de Auditoria Interna - Viman Contabilidade"""
         if not silencioso:
             messagebox.showinfo("Sucesso", "O pacote completo de relatórios e auditoria foi enviado à diretoria com sucesso!")
 
-    # =========================================================
-    # JANELA DE CONFIGURAÇÕES GLOBAIS (CAMINHO CSV E SMTP)
-    # =========================================================
     def abrir_janela_configuracoes(self):
         jan = ctk.CTkToplevel(self)
         jan.title("Configurações do Sistema")
@@ -705,12 +839,8 @@ Sistema de Auditoria Interna - Viman Contabilidade"""
 
         ctk.CTkButton(f_scr, text="💾 Salvar Configurações", command=salvar_configuracoes, fg_color="#2FA572", hover_color="#1D7850", width=280, height=45).pack(pady=15)
         
-        # --- NOVO BOTÃO PARA ABRIR O EDITOR DE TEXTO DA MENSAGEM DO E-MAIL ---
         ctk.CTkButton(f_scr, text="📝 Editar Mensagem do E-mail", command=self.abrir_janela_template_email, fg_color="#F39C12", hover_color="#D68910", width=280, height=40).pack(pady=(0, 20))
 
-    # =========================================================
-    # NOVO: EDITOR DE TEXTO PARA A MENSAGEM DO E-MAIL
-    # =========================================================
     def abrir_janela_template_email(self):
         jan_temp = ctk.CTkToplevel(self)
         jan_temp.title("Editar Mensagem Automática")
@@ -719,7 +849,7 @@ Sistema de Auditoria Interna - Viman Contabilidade"""
         jan_temp.grab_set()
 
         ctk.CTkLabel(jan_temp, text="Template do Corpo do E-mail", font=ctk.CTkFont(weight="bold", size=16)).pack(pady=(20, 5))
-        ctk.CTkLabel(jan_temp, text="Pode usar as variáveis {periodo}, {total_pags} e {custo_total} no seu texto.", font=ctk.CTkFont(slant="italic", size=12)).pack(pady=(0, 10))
+        ctk.CTkLabel(jan_temp, text="Variáveis automáticas: {periodo}, {total_pags} e {custo_total}", font=ctk.CTkFont(slant="italic", size=12)).pack(pady=(0, 10))
 
         txt_template = ctk.CTkTextbox(jan_temp, width=550, height=350, font=ctk.CTkFont(size=14))
         txt_template.pack(padx=20, pady=10)
@@ -750,9 +880,6 @@ Sistema de Auditoria Interna - Viman Contabilidade"""
 
         ctk.CTkButton(jan_temp, text="💾 Salvar Mensagem", command=salvar_template, fg_color="#2FA572", hover_color="#1D7850", width=220, height=45).pack(pady=10)
 
-    # =========================================================
-    # JANELA DE CADASTROS (CUSTOS E DEPARTAMENTOS)
-    # =========================================================
     def abrir_janela_custos(self):
         jan = ctk.CTkToplevel(self); jan.title("Custos de Impressão"); jan.geometry("500x500"); jan.attributes("-topmost", True); jan.grab_set() 
         ctk.CTkLabel(jan, text="Definir Valor (R$) por Página", font=ctk.CTkFont(weight="bold", size=16)).pack(pady=15)

@@ -36,6 +36,14 @@ class HistoricoEnvio(Base):
     mes_referencia = Column(String(10), unique=True) # Ex: "09/2026"
     data_envio = Column(DateTime, default=datetime.now)
 
+# --- TABELA DE REGRAS DE CLASSIFICAÇÃO ---
+class RegraClassificacao(Base):
+    __tablename__ = 'regras_classificacao'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    categoria = Column(String(100), nullable=False)
+    tipo_regra = Column(String(50), nullable=False) 
+    valor = Column(String(200), nullable=False)
+
 # --- TABELA CENTRAL DE CONFIGURAÇÕES DO SISTEMA ---
 class ConfiguracaoSistema(Base):
     __tablename__ = 'configuracoes_sistema'

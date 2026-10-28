@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox, filedialog, Menu
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -148,6 +148,7 @@ class DashboardFrame(ctk.CTkFrame):
         janela_proc.attributes("-topmost", True)
         
         ctk.CTkLabel(janela_proc, text=f"🔍 Detalhamento de Processo: {categoria}", font=ctk.CTkFont(weight="bold", size=14)).pack(pady=10)
+        ctk.CTkLabel(janela_proc, text="Dica: Clique com o botão direito do rato sobre um documento para ver opções.", font=ctk.CTkFont(slant="italic", size=12), text_color="gray").pack(pady=(0, 5))
 
         frame_grid = ctk.CTkFrame(janela_proc)
         frame_grid.pack(fill="both", expand=True, padx=10, pady=10)
@@ -170,25 +171,40 @@ class DashboardFrame(ctk.CTkFrame):
             
         tree_proc.pack(fill="both", expand=True)
 
-        # --- A MÁGICA ACONTECE AQUI: DUPLO CLIQUE PARA IR AOS REGISTROS ---
-        def redirecionar_para_registros(event):
+        # --- NOVO: MENU DE CONTEXTO (CLIQUE DIREITO) ---
+        menu_contexto = Menu(janela_proc, tearoff=0, bg="#2b2b2b", fg="white", activebackground="#2FA572", activeforeground="white")
+        
+        def ver_relatorio():
             selecao = tree_proc.selection()
             if not selecao: return
-            
             nome_doc = tree_proc.item(selecao[0], "values")[0]
-            janela_proc.destroy() # Fecha o popup atual
-            
-            # Pega a janela principal do sistema (app.py)
+            janela_proc.destroy() 
             app_principal = self.winfo_toplevel()
-            
-            # Tenta chamar a função que vai fazer a troca de aba e a pesquisa
             if hasattr(app_principal, "pesquisar_nos_registros"):
                 app_principal.pesquisar_nos_registros(nome_doc)
-            else:
-                # Se a função ainda não existir no app.py, mostramos este aviso
-                messagebox.showinfo("Quase lá!", f"Documento selecionado:\n{nome_doc}\n\nA ponte está criada! Agora precisamos adicionar a função de busca no seu app.py para receber este texto.")
                 
-        tree_proc.bind("<Double-1>", redirecionar_para_registros)
+        def classificar_mapa():
+            selecao = tree_proc.selection()
+            if not selecao: return
+            nome_doc = tree_proc.item(selecao[0], "values")[0]
+            # Opcional: pode fechar o popup ou mantê-lo aberto. Vamos manter aberto por trás.
+            app_principal = self.winfo_toplevel()
+            if hasattr(app_principal, "abrir_janela_regras"):
+                app_principal.abrir_janela_regras(pre_fill_valor=nome_doc)
+
+        menu_contexto.add_command(label="📄 Ver no Relatório Detalhado", command=ver_relatorio)
+        menu_contexto.add_command(label="🏷️ Classificar no Mapa de Processos", command=classificar_mapa)
+
+        def ao_clicar_direito(event):
+            item = tree_proc.identify_row(event.y)
+            if item:
+                tree_proc.selection_set(item)
+                menu_contexto.post(event.x_root, event.y_root)
+
+        tree_proc.bind("<Button-3>", ao_clicar_direito)
+        
+        # Mantém o duplo clique como atalho direto para o Relatório (mais rápido)
+        tree_proc.bind("<Double-1>", lambda e: ver_relatorio())
 
     def abrir_detalhes(self, tree, is_duplicado):
         item_selecionado = tree.selection()
@@ -292,9 +308,7 @@ class DashboardFrame(ctk.CTkFrame):
         bg = "#2b2b2b" if ctk.get_appearance_mode() == "Dark" else "#ffffff"
         txt = "white" if bg == "#2b2b2b" else "black"
 
-        # ==========================================
         # 1. VISÃO GERAL
-        # ==========================================
         df_dept = df.groupby('departamento')['paginas'].sum().sort_values(ascending=True)
         df_impressoras = df.groupby('impressora')['paginas'].sum().sort_values(ascending=False)
         df_usuarios_all = df.groupby('nome_final')['paginas'].sum().sort_values(ascending=True)
@@ -335,9 +349,7 @@ class DashboardFrame(ctk.CTkFrame):
         fig_geral.tight_layout(); self.figuras_para_exportar.append(fig_geral)
         FigureCanvasTkAgg(fig_geral, master=self.tab_geral).draw(); FigureCanvasTkAgg(fig_geral, master=self.tab_geral).get_tk_widget().pack(fill="both", expand=True)
 
-        # ==========================================
         # 2. ANÁLISE TEMPORAL 
-        # ==========================================
         df['data_hora'] = pd.to_datetime(df['data_hora'])
         df_dia = df.groupby(df['data_hora'].dt.strftime('%d/%m'))['paginas'].sum().sort_index()
         df_acumulado = df_dia.cumsum()
@@ -376,9 +388,7 @@ class DashboardFrame(ctk.CTkFrame):
         fig_tempo.tight_layout(); self.figuras_para_exportar.append(fig_tempo)
         FigureCanvasTkAgg(fig_tempo, master=self.tab_tempo).draw(); FigureCanvasTkAgg(fig_tempo, master=self.tab_tempo).get_tk_widget().pack(fill="both", expand=True)
 
-        # ==========================================
         # 3. AUDITORIA & DESPERDÍCIO
-        # ==========================================
         df['extensao'] = df['documento'].apply(self.extrair_extensao)
         df_ext = df.groupby('extensao')['paginas'].sum().sort_values(ascending=False).head(6)
         
@@ -403,9 +413,7 @@ class DashboardFrame(ctk.CTkFrame):
         for _, r in df_duplicados.iterrows():
             self.tree_repetidos.insert("", "end", values=(f"{int(r['vezes'])}x", r['nome_final'], int(r['paginas_totais']), r['documento']))
 
-        # ==========================================
         # 4. PAINEL FINANCEIRO
-        # ==========================================
         dict_custos = {}
         sessao2, engine2 = obter_sessao()
         try:
@@ -447,39 +455,31 @@ class DashboardFrame(ctk.CTkFrame):
         fig_fin.tight_layout(); self.figuras_para_exportar.append(fig_fin)
         FigureCanvasTkAgg(fig_fin, master=self.tab_financeiro).draw(); FigureCanvasTkAgg(fig_fin, master=self.tab_financeiro).get_tk_widget().pack(fill="both", expand=True)
 
-        # ==========================================
-        # 5. MAPA DE PROCESSOS (AGORA POR ERP E DUPLO CLIQUE)
-        # ==========================================
+        # 5. MAPA DE PROCESSOS (DINÂMICO)
+        sessao_reg, engine_reg = obter_sessao()
+        try:
+            from db import RegraClassificacao
+            df_regras = pd.read_sql("SELECT categoria, tipo_regra, valor FROM regras_classificacao", engine_reg)
+        except Exception:
+            df_regras = pd.DataFrame(columns=['categoria', 'tipo_regra', 'valor'])
+        finally:
+            sessao_reg.close()
+
+        if not df_regras.empty:
+            regras_pasta = df_regras[df_regras['tipo_regra'] == 'Pasta'][['valor', 'categoria']].values.tolist()
+            regras_kw = df_regras[df_regras['tipo_regra'] == 'Palavra-chave'][['valor', 'categoria']].values.tolist()
+            regras_ext = df_regras[df_regras['tipo_regra'] == 'Extensão'][['valor', 'categoria']].values.tolist()
+        else:
+            regras_pasta, regras_kw, regras_ext = [], [], []
+
         def classificar_processo(doc):
             doc_min = str(doc).lower()
-            
-            # 1. Pastas do ERP
-            if '\\telecont\\' in doc_min or '/telecont/' in doc_min: return 'Contabilidade'
-            if '\\folha\\' in doc_min or '/folha/' in doc_min: return 'Departamento Pessoal'
-            if '\\efiscal\\' in doc_min or '/efiscal/' in doc_min: return 'Fiscal'
-                
-            # 2. Palavras-chave Estratégicas
-            contabilidade_keywords = ['balanço', 'comprovante', 'balanco', 'balancete', 'balancetes','balancette', 'contábil', 'contabil', 'contabilidade', 'apolice', 'apólice', 'apolices', 'apólices', 'estoque', 'extrato', 'mútuo']
-            if any(kw in doc_min for kw in contabilidade_keywords): return 'Contabilidade'
-
-            dp_keywords = ['aso de', 'retenção', 'retencao', 'retenções', 'retencoes', 'férias', 'ferias', 'rescisão', 'rescisao', 'pro-rural', 'base de cálculo', 'folha de pagto', 'folha de pagamento', 'fgts', 'holerite', 'holerith', 'holerites', 'trabalhado', 'ficha de registro', 'listfunccompleta', 'esocial']
-            if any(kw in doc_min for kw in dp_keywords): return 'Departamento Pessoal'
-                
-            fiscal_keywords = ['pis', 'cofins', 'irpj', 'csll', 'darf', 'das', 'simples nacional']
-            if any(kw in doc_min for kw in fiscal_keywords): return 'Fiscal'
-
-            # 3. Categorias Específicas
-            if 'guia' in doc_min: return 'Guias'
-            bancos = ['itau', 'itaú', 'sicoob', 'sicredi', 'sicreed', 'banco do brasil', 'btg', 'bradesco', 'santander', 'caixa']
-            if any(banco in doc_min for banco in bancos): return 'Bancos'
-            if 'nota' in doc_min or 'nfe' in doc_min or 'nf-e' in doc_min: return 'Notas'
-            if 'relatorio' in doc_min or 'relatório' in doc_min: return 'Relatórios'
-                
-            # 4. Formatos Genéricos
-            if '.xls' in doc_min: return 'Planilhas'
-            if '.txt' in doc_min: return 'Arquivos de Texto'
-            if '.pdf' in doc_min: return 'Arquivos PDF'
-                
+            for val, cat in regras_pasta:
+                if val in doc_min: return cat
+            for val, cat in regras_kw:
+                if val in doc_min: return cat
+            for val, cat in regras_ext:
+                if val in doc_min: return cat
             return 'Outros'
 
         self.df_atual['processo'] = self.df_atual['documento'].apply(classificar_processo)
@@ -515,9 +515,7 @@ class DashboardFrame(ctk.CTkFrame):
 
         canvas_proc.mpl_connect('button_press_event', on_click_proc)
 
-        # ==========================================
         # 6. RADAR DE SEGURANÇA / LGPD 
-        # ==========================================
         df['dia_semana'] = df['data_hora'].dt.weekday
         
         def definir_alerta_seguranca(row):
